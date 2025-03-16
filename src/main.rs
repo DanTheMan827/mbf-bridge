@@ -27,7 +27,7 @@ use tokio::{
     net::TcpStream,
     process::Command,
 };
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tray_icon::{
     menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
     TrayIconBuilder, TrayIconEvent,
@@ -138,7 +138,7 @@ async fn adb_connect_or_start() -> tokio::io::Result<TcpStream> {
 }
 
 fn start_browser() {
-    open::that_detached("https://app.tangoapp.dev/?desktop=true").unwrap();
+    open::that_detached("https://mbf.bsquest.xyz/").unwrap();
 }
 
 async fn handle_websocket(ws: WebSocket) {
@@ -175,49 +175,6 @@ async fn handle_websocket(ws: WebSocket) {
 }
 
 const ARG_AUTO_RUN: &str = "--auto-run";
-
-#[cfg(debug_assertions)]
-const PROXY_HOST: &str = "https://app.tangoapp.dev";
-#[cfg(not(debug_assertions))]
-const PROXY_HOST: &str = "https://app.tangoapp.dev";
-
-static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-
-#[axum::debug_handler]
-async fn proxy_request(request: Request) -> Result<Response, Response> {
-    println!("proxy_request: {} {}", request.method(), request.uri());
-
-    let url = Url::options()
-        .base_url(Some(&Url::parse(PROXY_HOST).unwrap()))
-        .parse(&request.uri().to_string())
-        .map_err(|_| (StatusCode::BAD_REQUEST, "Bad Request").into_response())?;
-
-    let mut headers = request.headers().clone();
-    headers.insert("Host", url.host_str().unwrap().parse().unwrap());
-
-    let (client, request) = CLIENT
-        .get_or_init(|| reqwest::Client::new())
-        .request(request.method().clone(), url)
-        .headers(headers)
-        .body(reqwest::Body::wrap_stream(
-            request.into_body().into_data_stream(),
-        ))
-        .build_split();
-
-    let request = request.map_err(|_| (StatusCode::BAD_REQUEST, "Bad Request").into_response())?;
-
-    let response = client
-        .execute(request)
-        .await
-        .map_err(|_| (StatusCode::BAD_GATEWAY, "Bad Gateway").into_response())?;
-
-    Ok((
-        response.status(),
-        response.headers().clone(),
-        axum::body::Body::new(reqwest::Body::from(response)),
-    )
-        .into_response())
-}
 
 static SINGLE_INSTANCE: OnceLock<single_instance::SingleInstance> = OnceLock::new();
 
@@ -256,18 +213,15 @@ async fn main() {
                         .allow_methods([Method::GET, Method::POST])
                         .allow_origin(
                             [
-                                "http://localhost:3002",
-                                "https://app.tangoapp.dev",
-                                "https://beta.tangoapp.dev",
-                                "https://tunnel.tangoapp.dev",
+                                "http://localhost:3000",
+                                "https://localhost:3000",
+                                "https://mbf.bsquest.xyz",
                             ]
-                            .map(|x| x.parse().unwrap()),
-                        )
+                            .map(|x| x.parse().unwrap()))
                         .allow_private_network(true),
                 ),
-        )
-        .fallback(proxy_request);
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:15037")
+        );
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:25037")
         .await
         .unwrap();
 

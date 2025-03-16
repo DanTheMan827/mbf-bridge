@@ -1,9 +1,10 @@
 name: "Build"
 
 on:
+  workflow_dispatch:
   push:
     branches:
-      - main
+      - '*'
 
 jobs:
   windows-x86:
@@ -23,7 +24,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: "tango-bridge-windows-x86"
-          path: "target/i686-pc-windows-msvc/release/tango_bridge_rs.exe"
+          path: "target/i686-pc-windows-msvc/release/mbf_bridge.exe"
 
   windows-x64:
     name: "Windows x64"
@@ -42,7 +43,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: "tango-bridge-windows-x64"
-          path: "target/x86_64-pc-windows-msvc/release/tango_bridge_rs.exe"
+          path: "target/x86_64-pc-windows-msvc/release/mbf_bridge.exe"
 
   linux-x64:
     name: "Linux x64"
@@ -61,7 +62,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: "tango-bridge-linux-x64"
-          path: "target/x86_64-unknown-linux-gnu/release/tango_bridge_rs"
+          path: "target/x86_64-unknown-linux-gnu/release/mbf_bridge"
 
   macos-x64:
     name: "macOS x64"
@@ -78,10 +79,10 @@ jobs:
         env:
           MACOSX_DEPLOYMENT_TARGET: 10.13
 
-      - run: cp target/x86_64-apple-darwin/release/tango_bridge_rs tango-bridge.app/Contents/MacOS/tango-bridge
+      - run: cp target/x86_64-apple-darwin/release/mbf_bridge mbf-bridge.app/Contents/MacOS/tango-bridge
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: "tango-bridge-macos-x64"
-          path: "tango-bridge.app"
+          path: "mbf-bridge.app"

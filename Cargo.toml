@@ -1,5 +1,5 @@
 [package]
-name = "tango_bridge_rs"
+name = "mbf_bridge"
 description = "Tango ADB Desktop Application"
 version = "0.1.0"
 edition = "2021"

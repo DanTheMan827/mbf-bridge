@@ -1450,6 +1450,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
+name = "mbf_bridge"
+version = "0.1.0"
+dependencies = [
+ "auto-launch",
+ "axum",
+ "core-foundation",
+ "futures-util",
+ "http",
+ "image",
+ "open",
+ "reqwest",
+ "single-instance",
+ "tao",
+ "tokio",
+ "tower-http",
+ "tray-icon",
+ "winresource",
+]
+
+[[package]]
 name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2328,26 +2348,6 @@ dependencies = [
  "pkg-config",
  "toml",
  "version-compare",
-]
-
-[[package]]
-name = "tango_bridge_rs"
-version = "0.1.0"
-dependencies = [
- "auto-launch",
- "axum",
- "core-foundation",
- "futures-util",
- "http",
- "image",
- "open",
- "reqwest",
- "single-instance",
- "tao",
- "tokio",
- "tower-http",
- "tray-icon",
- "winresource",
 ]
 
 [[package]]
