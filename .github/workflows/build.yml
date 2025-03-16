@@ -7,85 +7,63 @@ on:
       - '*'
 
 jobs:
-  windows-x86:
-    name: "Windows x86"
-    runs-on: windows-latest
+  build:
+    name: "Build for ${{ matrix.os }} ${{ matrix.arch }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            arch: i686-pc-windows-msvc
+            artifact_name: "tango-bridge-windows-x86"
+            artifact_path: "target/i686-pc-windows-msvc/release/mbf_bridge.exe"
+
+          - os: windows-latest
+            arch: x86_64-pc-windows-msvc
+            artifact_name: "tango-bridge-windows-x64"
+            artifact_path: "target/x86_64-pc-windows-msvc/release/mbf_bridge.exe"
+
+          - os: ubuntu-latest
+            arch: x86_64-unknown-linux-gnu
+            artifact_name: "tango-bridge-linux-x64"
+            artifact_path: "target/x86_64-unknown-linux-gnu/release/mbf_bridge"
+
+          - os: macos-13
+            arch: x86_64-apple-darwin
+            artifact_name: "tango-bridge-macos-x64"
+            artifact_path: "mbf-bridge.app"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/
+            target/
+          key: ${{ matrix.os }}-${{ matrix.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ matrix.os }}-${{ matrix.arch }}-cargo-
 
       - name: Install Rust toolchain
-        run: rustup target add i686-pc-windows-msvc
+        run: rustup target add ${{ matrix.arch }}
 
-      - name: Build
-        run: cargo build --target i686-pc-windows-msvc --release
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: "tango-bridge-windows-x86"
-          path: "target/i686-pc-windows-msvc/release/mbf_bridge.exe"
-
-  windows-x64:
-    name: "Windows x64"
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        run: rustup target add x86_64-pc-windows-msvc
-
-      - name: Build
-        run: cargo build --target x86_64-pc-windows-msvc --release
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: "tango-bridge-windows-x64"
-          path: "target/x86_64-pc-windows-msvc/release/mbf_bridge.exe"
-
-  linux-x64:
-    name: "Linux x64"
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install glib
+      - name: Install glib (Linux only)
+        if: runner.os == 'Linux'
         run: sudo apt-get install libglib2.0-dev
 
-      - name: Install Rust toolchain
-        run: rustup target add x86_64-unknown-linux-gnu
+      - name: Set macOS deployment target (macOS only)
+        if: runner.os == 'macOS'
+        run: echo "MACOSX_DEPLOYMENT_TARGET=10.13" >> $GITHUB_ENV
 
       - name: Build
-        run: cargo build --target x86_64-unknown-linux-gnu --release
+        run: cargo build --target ${{ matrix.arch }} --release
+
+      - name: Prepare macOS app bundle (macOS only)
+        if: runner.os == 'macOS'
+        run: cp target/x86_64-apple-darwin/release/mbf_bridge mbf-bridge.app/Contents/MacOS/tango-bridge
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: "tango-bridge-linux-x64"
-          path: "target/x86_64-unknown-linux-gnu/release/mbf_bridge"
-
-  macos-x64:
-    name: "macOS x64"
-    runs-on: macos-13
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        run: rustup target add x86_64-apple-darwin
-
-      - name: Build
-        run: cargo build --target x86_64-apple-darwin --release
-        env:
-          MACOSX_DEPLOYMENT_TARGET: 10.13
-
-      - run: cp target/x86_64-apple-darwin/release/mbf_bridge mbf-bridge.app/Contents/MacOS/tango-bridge
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: "tango-bridge-macos-x64"
-          path: "mbf-bridge.app"
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
