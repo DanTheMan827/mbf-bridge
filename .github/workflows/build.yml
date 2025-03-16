@@ -47,9 +47,9 @@ jobs:
       - name: Install Rust toolchain
         run: rustup target add ${{ matrix.arch }}
 
-      - name: Install glib (Linux only)
+      - name: Install dependencies (Linux only)
         if: runner.os == 'Linux'
-        run: sudo apt-get install libglib2.0-dev
+        run: sudo apt-get install libglib2.0-dev libgtk3.0-dev
 
       - name: Set macOS deployment target (macOS only)
         if: runner.os == 'macOS'
