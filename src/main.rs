@@ -289,7 +289,7 @@ fn extract_origin(app_url: &str) -> Option<String> {
 }
 
 const DEFAULT_PORT: u16 = 25037;
-const DEFAULT_URL: &str = "https://mbf.bsquest.xyz/";
+const DEFAULT_URL: &str = "https://dantheman827.github.io/ModsBeforeFriday/";
 const DEFAULT_GAME_ID: &str = "com.beatgames.beatsaber";
 
 /// Entry point of the application.
@@ -323,9 +323,9 @@ async fn main() {
             "",
             "Options:",
             "  --help              Show this help message",
-            "  --port <PORT>       Specify a custom port for the server (default: 25037, or 0 if not persistent)",
+            format!("  --port <PORT>       Specify a custom port for the server (default: {}, or 0 if not persistent)", DEFAULT_PORT).as_str(),
             "  --auto-close        Automatically exit the bridge after 10 seconds of inactivity",
-            "  --url <URL>         Specify a custom URL for the MBF app (default: https://mbf.bsquest.xyz/)",
+            format!("  --url <URL>         Specify a custom URL for the MBF app (default: {})", DEFAULT_URL).as_str(),
             "  --open-browser      Open the browser automatically after starting the server (implied if not persistent)",
             "",
             "Development Options:",
@@ -630,14 +630,14 @@ async fn main() {
             }
         }
 
-        if let Ok(TrayIconEvent::Click {
-            button: tray_icon::MouseButton::Left,
-            button_state: tray_icon::MouseButtonState::Down,
-            ..
-        }) = tray_receiver.try_recv()
-        {
-            start_browser(browser_url.clone());
-            return;
+            if let Ok(TrayIconEvent::Click {
+                button: tray_icon::MouseButton::Left,
+                button_state: tray_icon::MouseButtonState::Down,
+                ..
+            }) = tray_receiver.try_recv()
+            {
+                start_browser(browser_url.clone());
+                return;
         }
     });
 }
