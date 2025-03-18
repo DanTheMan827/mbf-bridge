@@ -19,10 +19,7 @@
 //! **Note:** Currently, the UUID is generated using `Uuid::new_v4()`. Replace this with a UUID v7 generator if available.
 
 use std::{
-    env,
-    process::{exit, Stdio},
-    sync::{Arc, Mutex, OnceLock},
-    time::{Duration, Instant},
+    env, path::{Path, PathBuf}, process::{exit, Stdio}, sync::{Arc, Mutex, OnceLock}, time::{Duration, Instant}
 };
 
 use auto_launch::AutoLaunchBuilder;
@@ -38,7 +35,7 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use http::{Method, StatusCode};
 use reqwest::Url;
-use tao::event_loop::EventLoopBuilder;
+use tao::event_loop::{self, EventLoopBuilder};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -47,7 +44,7 @@ use tokio::{
 };
 use tower_http::cors::CorsLayer;
 use tray_icon::{
-    menu::{CheckMenuItem, ContextMenu, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
     TrayIconBuilder, TrayIconEvent,
 };
 
@@ -200,13 +197,102 @@ async fn adb_connect_or_start() -> tokio::io::Result<TcpStream> {
     }
 }
 
+/// Attempts to locate an executable by checking direct paths, the PATH variable,
+/// and the App Paths registry on Windows.
+fn lookup_executable(command: &str) -> Option<String> {
+    // Step 1: If the command is a direct path, check if it exists.
+    let command_path = Path::new(command);
+    if command_path.exists() && command_path.is_file() {
+        return Some(command_path.to_string_lossy().to_string());
+    }
+
+    // If the command doesn't have an extension, consider adding ".exe"
+    let candidate_names: Vec<String> = if Path::new(command).extension().is_none() {
+        vec![command.to_string(), format!("{}.exe", command)]
+    } else {
+        vec![command.to_string()]
+    };
+
+    // Step 2: Look through each directory in the PATH environment variable.
+    if let Ok(paths) = env::var("PATH") {
+        for path in env::split_paths(&paths) {
+            for candidate in &candidate_names {
+                let full_path = path.join(candidate);
+                if full_path.exists() && full_path.is_file() {
+                    return Some(full_path.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    // Step 3: Check the App Paths registry (Windows-specific)
+    #[cfg(windows)]
+    {
+        use winreg::RegKey;
+        use winreg::enums::*;
+
+        // Open the registry key for App Paths.
+        let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+        if let Ok(app_paths) = hklm.open_subkey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths") {
+            for candidate in &candidate_names {
+                if let Ok(subkey) = app_paths.open_subkey(candidate) {
+                    // The default value usually contains the full path to the executable.
+                    if let Ok(path_str) = subkey.get_value::<String, _>("") {
+                        let candidate_path = PathBuf::from(path_str);
+                        if candidate_path.exists() && candidate_path.is_file() {
+                            return Some(candidate_path.to_string_lossy().to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // No method succeeded, so return None.
+    None
+}
+
+fn start_chromium_app(binary: &Option<String>, url: &str) -> bool {
+    if let Some(executable) = binary {
+        // Launch the chromium-based browse in app mode with our url.
+        let mut command = Command::new(executable);
+        command.args(&["--new-window", format!("--app={}", url).as_str()]);
+
+        tokio::spawn(async move { command.spawn() });
+
+        return true;
+    }
+
+    return false;
+}
+
+static EDGE_PATH: OnceLock<Option<String>> = OnceLock::new();
+static CHROME_PATH: OnceLock<Option<String>> = OnceLock::new();
+static GOOGLE_CHROME_PATH: OnceLock<Option<String>> = OnceLock::new();
+
 /// Opens the default browser with the specified URL.
 ///
 /// # Arguments
 ///
 /// * `url` - The URL to open.
-fn start_browser(url: String) {
-    open::that_detached(url).unwrap();
+fn start_browser(url: &Arc<String>) {
+    let url = Arc::clone(&url);
+
+    let _ = tokio::spawn(async move {
+        if start_chromium_app(EDGE_PATH.get_or_init(|| lookup_executable("msedge")), url.as_ref()) {
+            return;
+        }
+
+        if start_chromium_app(CHROME_PATH.get_or_init(|| lookup_executable("chrome")), url.as_ref()) {
+            return;
+        }
+
+        if start_chromium_app(GOOGLE_CHROME_PATH.get_or_init(|| lookup_executable("google-chrome")), url.as_ref()) {
+            return;
+        }
+
+        open::that_detached(url.as_ref()).unwrap();
+    });
 }
 
 /// Handles incoming websocket connections and proxies data to/from the ADB server.
@@ -318,19 +404,6 @@ async fn proxy_request(request: Request) -> Result<Response, Response> {
         .into_response())
 }
 
-/// Redirects incoming requests to the configured proxy host.
-///
-/// Returns a 302 Found with a "Location" header.
-#[axum::debug_handler]
-async fn redirect_request(request: Request) -> Result<Response, Response> {
-    let response = Response::builder()
-        .status(StatusCode::FOUND)
-        .header("Location", PROXY_HOST.get().unwrap())
-        .body(axum::body::Body::empty())
-        .unwrap();
-    Ok(response)
-}
-
 /// URL encodes a string.
 fn url_encode(input: &str) -> String {
     let mut output = String::new();
@@ -404,6 +477,8 @@ async fn main() {
             "  --open-browser      Open the browser automatically after starting the server (implied if not persistent)",
             #[cfg(not(target_os = "macos"))]
             "  --proxy             Proxy requests through the internal server to avoid mixed content errors",
+            #[cfg(windows)]
+            "  --console           Allocate a console window to display logs",
             "",
             "Development Options:",
             "  --dev               Enable MBF development mode",
@@ -491,12 +566,14 @@ async fn main() {
     // ------------------------------
     // Track the time of the last request for auto-close.
     let last_request_time = Arc::new(Mutex::new(Instant::now()));
-    let last_request_time_clone = Arc::clone(&last_request_time);
-    let update_last_request_time = move |req: Request, next: axum::middleware::Next| {
-        let last_request_time = Arc::clone(&last_request_time_clone);
-        async move {
-            *last_request_time.lock().unwrap() = Instant::now();
-            next.run(req).await
+    let update_last_request_time = {
+        let last_request_time = Arc::clone(&last_request_time);
+        move |req: Request, next: axum::middleware::Next| {
+            let last_request_time = Arc::clone(&last_request_time);
+            async move {
+                *last_request_time.lock().unwrap() = Instant::now();
+                next.run(req).await
+            }
         }
     };
 
@@ -586,79 +663,106 @@ async fn main() {
     println!("Server is running: {}", assigned_url);
     println!("Browser URL: {}", browser_url);
 
+    let browser_url = Arc::new(browser_url);
+
     // Open browser if requested.
     if open_browser {
-        start_browser(browser_url.clone());
+        start_browser(&browser_url);
     }
 
-    // ------------------------------
-    // Shutdown and Auto-Close Handling
-    // ------------------------------
-    let shutdown_signal = async {
-        signal::ctrl_c()
-            .await
-            .expect("Failed to install Ctrl+C handler");
-        println!("Shutdown signal received. Cleaning up...");
-    };
+    let run_persistent = Arc::new(run_persistent);
+    let event_loop_running = Arc::new(Mutex::new(true));
 
-    tokio::spawn(async {
-        tokio::select! {
-            _ = axum::serve(listener, app) => {},
-            _ = shutdown_signal => {
-                println!("Server is shutting down...");
-                exit(0);
-            },
-        }
-    });
-
-    // If not running persistently, shut down after 10 seconds of inactivity.
-    if !run_persistent {
-        let last_request_time = Arc::clone(&last_request_time);
-        loop {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            let elapsed = last_request_time.lock().unwrap().elapsed();
-            if elapsed > Duration::from_secs(10) {
-                println!("No requests received in the last 10 seconds. Shutting down...");
-                exit(0);
+    let event_loop_check = {
+        let event_loop_running = Arc::clone(&event_loop_running);
+        async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(16)).await;
+                let event_loop_running = event_loop_running.as_ref().lock().unwrap();
+                if *event_loop_running == false {
+                    return;
+                }
             }
         }
-    }
+    };
+
+    let shutdown_signal = {
+        async move {
+            signal::ctrl_c()
+                .await
+                .expect("Failed to install Ctrl+C handler");
+        }
+    };
+
+    let unix_hup_signal = {
+        async move {
+            #[cfg(unix)]
+            {
+                signal::unix::SIGHUP
+                    .expect("Failed to install SIGHUP handler")
+                    .recv()
+                    .await;
+
+                return;
+            }
+
+            loop {
+                tokio::time::sleep(Duration::from_millis(16)).await;
+            }
+        }
+    };
+
+    // ------------------------------
+    // Idle check for auto-close
+    // ------------------------------
+    let idle_check = {
+        let run_persistent = Arc::clone(&run_persistent);
+        let last_request_time = Arc::clone(&last_request_time);
+
+        async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+
+                // If not running persistently, shut down after 10 seconds of inactivity.
+                if !run_persistent.as_ref() {
+                    let elapsed = last_request_time.lock().unwrap().elapsed();
+                    if elapsed > Duration::from_secs(10) {
+                        break;
+                    }
+                }
+            }
+        }
+    };
+
+    let server = {
+        let server = {
+            tokio::spawn(async move {
+                tokio::select! {
+                    _ = axum::serve(listener, app) => {
+                        println!("Server ended, this shouldn't happen.");
+                        exit(1);
+                    },
+                    _ = shutdown_signal => println!("Shutdown signal received."),
+                    _ = unix_hup_signal => println!("SIGHUP signal received."),
+                    _ = idle_check => println!("No requests received in the last 10 seconds."),
+                    _ = event_loop_check => println!("Event loop ended.")
+                }
+            })
+        };
+
+        {
+            tokio::spawn(async move {
+                let _ = server.await;
+
+                println!("Exiting...");
+                exit(0);
+            })
+        }
+    };
 
     // ------------------------------
     // System Tray and Event Loop
     // ------------------------------
-    let menu_open = MenuItem::new("Open", true, None);
-
-    let auto_launch = AutoLaunchBuilder::new()
-        .set_app_name(format!("ModsBeforeFriday Bridge {:?}", launch_args).as_str())
-        .set_app_path(env::current_exe().unwrap().to_str().unwrap())
-        .set_args(&launch_args)
-        .set_use_launch_agent(true)
-        .build()
-        .unwrap();
-    let menu_auto_run = CheckMenuItem::new(
-        "Run at startup",
-        true,
-        auto_launch.is_enabled().unwrap(),
-        None,
-    );
-    let menu_quit = MenuItem::new("Quit", true, None);
-
-    let tray_menu = Menu::new();
-    tray_menu
-        .append_items(&[
-            &menu_open,
-            &menu_auto_run,
-            &PredefinedMenuItem::separator(),
-            &menu_quit,
-        ])
-        .unwrap();
-
-    let menu_receiver = MenuEvent::receiver();
-    let tray_receiver = TrayIconEvent::receiver();
-
-    let mut tray_icon = None;
-
     #[allow(unused_mut)]
     let mut event_loop = EventLoopBuilder::new().build();
 
@@ -670,14 +774,62 @@ async fn main() {
         event_loop.set_activation_policy(tao::platform::macos::ActivationPolicy::Accessory);
     }
 
-    println!("Starting main loop");
+    if !run_persistent.as_ref() {
+        event_loop.run(move |_, _, control_flow| {
+            *control_flow = tao::event_loop::ControlFlow::WaitUntil(
+                Instant::now() + Duration::from_millis(16),
+            );
+        });
+    }
 
+    // Create the open menu item.
+    let menu_open = MenuItem::new("Open", true, None);
+
+    // Create the auto-launch configuration.
+    let auto_launch = AutoLaunchBuilder::new()
+        .set_app_name(format!("ModsBeforeFriday Bridge {:?}", launch_args).as_str())
+        .set_app_path(env::current_exe().unwrap().to_str().unwrap())
+        .set_args(&launch_args)
+        .set_use_launch_agent(true)
+        .build()
+        .unwrap();
+
+    // Create the auto-run menu item.
+    let menu_auto_run = CheckMenuItem::new(
+        "Run at startup",
+        true,
+        auto_launch.is_enabled().unwrap(),
+        None,
+    );
+
+    // Create the quit menu item.
+    let menu_quit = MenuItem::new("Quit", true, None);
+
+    // Create the tray menu.
+    let tray_menu = Menu::new();
+    tray_menu
+        .append_items(&[
+            &menu_open,
+            &menu_auto_run,
+            &PredefinedMenuItem::separator(),
+            &menu_quit,
+        ])
+        .unwrap();
+
+    // Create the event receivers.
+    let menu_receiver = MenuEvent::receiver();
+    let tray_receiver = TrayIconEvent::receiver();
+
+    // Create the tray icon.
+    let mut tray_icon = None;
+
+    println!("Starting main loop");
+    let server = Arc::new(server);
     event_loop.run(move |event, _, control_flow| {
-        *control_flow =
-            tao::event_loop::ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(16));
+        *control_flow =tao::event_loop::ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(16));
 
         if let tao::event::Event::Reopen { .. } = event {
-            start_browser(browser_url.clone());
+            start_browser(&browser_url);
             return;
         }
 
@@ -711,7 +863,7 @@ async fn main() {
 
         if let Ok(event) = menu_receiver.try_recv() {
             if event.id == menu_open.id() {
-                start_browser(browser_url.clone());
+                start_browser(&browser_url);
                 return;
             }
             if event.id == menu_auto_run.id() {
@@ -724,14 +876,15 @@ async fn main() {
                 return;
             }
             if event.id == menu_quit.id() {
-                tray_icon.take();
-                *control_flow = tao::event_loop::ControlFlow::Exit;
+                let mut event_loop_running = event_loop_running.as_ref().lock().unwrap();
+                *event_loop_running = false;
+
                 return;
             }
         }
 
         #[cfg(windows)]
-        {
+        let _ = {
             if let Ok(TrayIconEvent::DoubleClick {
                 id: _,
                 position: _,
@@ -739,9 +892,11 @@ async fn main() {
                 button: tray_icon::MouseButton::Left,
             }) = tray_receiver.try_recv()
             {
-                start_browser(browser_url.clone());
+                start_browser(&browser_url);
                 return;
             }
-        }
+        };
+
+        return;
     });
 }
