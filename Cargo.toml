@@ -12,6 +12,9 @@ OriginalFilename = "mbf_bridge.exe"
 [profile.release]
 strip = true
 lto = true
+opt-level = "z"
+codegen-units = 1
+panic = "abort"
 
 [dependencies]
 auto-launch = "0.5.0"
