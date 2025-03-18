@@ -19,7 +19,7 @@
 //! **Note:** Currently, the UUID is generated using `Uuid::new_v4()`. Replace this with a UUID v7 generator if available.
 
 use std::{
-    env, path::{Path, PathBuf}, process::{exit, Stdio}, sync::{Arc, Mutex, OnceLock}, time::{Duration, Instant}
+    env, path::Path, process::{exit, Stdio}, sync::{Arc, Mutex, OnceLock}, time::{Duration, Instant}
 };
 
 use auto_launch::AutoLaunchBuilder;
@@ -226,6 +226,7 @@ fn lookup_executable(command: &str) -> Option<String> {
     // Step 3: Check the App Paths registry (Windows-specific)
     #[cfg(windows)]
     {
+        use std::path::PathBuf;
         use winreg::RegKey;
         use winreg::enums::*;
 
@@ -452,7 +453,12 @@ async fn main() {
     let dev_mode = args.contains(&"--dev".to_string());
     let mut game_id = DEFAULT_GAME_ID;
     let mut open_browser = args.contains(&"--open-browser".to_string());
+
+    #[cfg(not(target_os = "macos"))]
     let proxy_requests = args.contains(&"--proxy".to_string());
+
+    #[cfg(target_os = "macos")]
+    let mut proxy_requests = args.contains(&"--proxy".to_string());
 
     // Display help message if requested.
     if args.contains(&"--help".to_string()) {
@@ -701,8 +707,11 @@ async fn main() {
                 return;
             }
 
-            loop {
-                tokio::time::sleep(Duration::from_millis(16)).await;
+            #[cfg(not(unix))]
+            {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(16)).await;
+                }
             }
         }
     };
@@ -813,6 +822,8 @@ async fn main() {
 
     // Create the event receivers.
     let menu_receiver = MenuEvent::receiver();
+
+    #[cfg(windows)]
     let tray_receiver = TrayIconEvent::receiver();
 
     // Create the tray icon.
