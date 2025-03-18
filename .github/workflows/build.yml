@@ -32,7 +32,7 @@ jobs:
           - os: macos-13
             arch: x86_64-apple-darwin
             artifact_name: "mbf-bridge-macos-universal"
-            artifact_path: "build/ModsBeforeFriday.app"
+            artifact_path: "build"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
