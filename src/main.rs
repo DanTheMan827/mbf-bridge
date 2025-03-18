@@ -695,7 +695,7 @@ async fn main() {
             {
                 use tokio::signal::unix::{signal, SignalKind};
 
-                let mut stream = signal(SignalKind::hangup())?;
+                let mut stream = signal(SignalKind::hangup()).unwrap();
                 stream.recv().await;
 
                 return;
