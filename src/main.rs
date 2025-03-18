@@ -692,10 +692,9 @@ async fn main() {
         async move {
             #[cfg(unix)]
             {
-                signal::unix::SIGHUP
-                    .expect("Failed to install SIGHUP handler")
-                    .recv()
-                    .await;
+                use tokio::signal::unix::SignalKind;
+                let mut stream = signal(SignalKind::hangup())?;
+                stream.recv().await;
 
                 return;
             }
