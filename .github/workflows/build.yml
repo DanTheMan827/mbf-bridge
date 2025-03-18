@@ -13,26 +13,27 @@ jobs:
     continue-on-error: true
     strategy:
       matrix:
+        build_type: [ "release", "debug"]
         include:
           - os: windows-latest
             arch: i686-pc-windows-msvc
             artifact_name: "mbf-bridge-windows-x86"
-            artifact_path: "target/i686-pc-windows-msvc/release/mbf_bridge.exe"
+            binary_name: "mbf_bridge.exe"
 
           - os: windows-latest
             arch: x86_64-pc-windows-msvc
             artifact_name: "mbf-bridge-windows-x64"
-            artifact_path: "target/x86_64-pc-windows-msvc/release/mbf_bridge.exe"
+            binary_name: "mbf_bridge.exe"
 
           - os: ubuntu-latest
             arch: x86_64-unknown-linux-gnu
             artifact_name: "mbf-bridge-linux-x64"
-            artifact_path: "target/x86_64-unknown-linux-gnu/release/mbf_bridge"
+            binary_name: "mbf_bridge"
 
           - os: macos-13
             arch: x86_64-apple-darwin
             artifact_name: "mbf-bridge-macos-universal"
-            artifact_path: "build"
+            binary_name: "build"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,23 +67,31 @@ jobs:
           if [ "$RUNNER_OS" = "macOS" ]; then
             rustup target add aarch64-apple-darwin
 
-            cargo build --target x86_64-apple-darwin --release
-            cargo build --target aarch64-apple-darwin --release
+            cargo build --target x86_64-apple-darwin --${{ matrix.build_type }}
+            cargo build --target aarch64-apple-darwin --${{ matrix.build_type }}
           else
-            cargo build --target ${{ matrix.arch }} --release
+            cargo build --target ${{ matrix.arch }} --${{ matrix.build_type }}
           fi
 
       - name: Prepare macOS app bundle (macOS only)
         if: runner.os == 'macOS'
         run: |
           lipo -create -output ModsBeforeFriday.app/Contents/MacOS/mbf-bridge \
-              target/x86_64-apple-darwin/release/mbf_bridge \
-              target/aarch64-apple-darwin/release/mbf_bridge
+              target/x86_64-apple-darwin/${{ matrix.build_type }}/mbf_bridge \
+              target/aarch64-apple-darwin/${{ matrix.build_type }}/mbf_bridge
           mkdir build
           mv ModsBeforeFriday.app build
-          
+
       - name: Upload artifact
+        if: runner.os != 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_path }}
+          name: ${{ matrix.artifact_name }}-${{ matrix.build_type }}
+          path: target/${{ matrix.arch }}/${{ matrix.build_type }}/${{ matrix.binary_name }}
+
+      - name: Upload artifact (macOS only)
+        if: runner.os != 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}-${{ matrix.build_type }}
+          path: build
