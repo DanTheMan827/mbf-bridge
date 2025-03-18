@@ -31,12 +31,13 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Request,
     },
-    response::Response,
+    response::{IntoResponse, Response},
     routing::get,
     Router,
 };
 use futures_util::{SinkExt, StreamExt};
 use http::{Method, StatusCode};
+use reqwest::Url;
 use tao::event_loop::EventLoopBuilder;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -46,7 +47,7 @@ use tokio::{
 };
 use tower_http::cors::CorsLayer;
 use tray_icon::{
-    menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, ContextMenu, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
     TrayIconBuilder, TrayIconEvent,
 };
 
@@ -75,7 +76,9 @@ async fn adb_start(path: &str) -> tokio::io::Result<()> {
 
     let mut process = command.spawn()?;
     // Spawn a background task to wait for the process (avoid blocking)
-    tokio::spawn(async move { let _ = process.wait().await; });
+    tokio::spawn(async move {
+        let _ = process.wait().await;
+    });
     Ok(())
 }
 
@@ -122,8 +125,16 @@ async fn extract_adb_binaries_windows() -> Result<std::path::PathBuf, Box<dyn st
 
     let adb_path = adb_subfolder.join("adb.exe");
     write(&adb_path, include_bytes!("../adb/win/adb.exe")).await?;
-    write(adb_subfolder.join("AdbWinApi.dll"), include_bytes!("../adb/win/AdbWinApi.dll")).await?;
-    write(adb_subfolder.join("AdbWinUsbApi.dll"), include_bytes!("../adb/win/AdbWinUsbApi.dll")).await?;
+    write(
+        adb_subfolder.join("AdbWinApi.dll"),
+        include_bytes!("../adb/win/AdbWinApi.dll"),
+    )
+    .await?;
+    write(
+        adb_subfolder.join("AdbWinUsbApi.dll"),
+        include_bytes!("../adb/win/AdbWinUsbApi.dll"),
+    )
+    .await?;
     Ok(adb_path)
 }
 
@@ -183,11 +194,7 @@ async fn adb_connect_or_start() -> tokio::io::Result<TcpStream> {
     #[cfg(target_os = "macos")]
     {
         // On macOS, assume ADB is located alongside the executable.
-        let adb_exe = env::current_exe()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("adb");
+        let adb_exe = env::current_exe().unwrap().parent().unwrap().join("adb");
         adb_start(adb_exe.to_str().unwrap()).await.unwrap();
         adb_connect_retry().await
     }
@@ -230,7 +237,10 @@ async fn handle_websocket(ws: WebSocket) {
                         break;
                     }
                     Ok(n) => {
-                        ws_writer.send(Message::binary(buf[..n].to_vec())).await.unwrap();
+                        ws_writer
+                            .send(Message::binary(buf[..n].to_vec()))
+                            .await
+                            .unwrap();
                     }
                 }
             }
@@ -243,6 +253,70 @@ static PROXY_HOST: OnceLock<String> = OnceLock::new();
 
 /// Global HTTP client.
 static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+/// Handles proxying of HTTP requests to the configured proxy host.
+///
+/// This function takes an incoming HTTP request, modifies it to include the appropriate
+/// headers and target URL, and forwards it to the configured proxy host. The response
+/// from the proxy host is then returned to the client.
+///
+/// # Arguments
+///
+/// * `request` - The incoming HTTP request to be proxied.
+///
+/// # Returns
+///
+/// A `Result<Response, Response>` where:
+/// - `Ok(Response)` contains the successful response from the proxy host.
+/// - `Err(Response)` contains an error response if the request could not be processed.
+///
+/// # Behavior
+///
+/// - The function reads the global `PROXY_HOST` to determine the base URL for the proxy.
+/// - It modifies the incoming request's headers to include the `Host` header of the proxy host.
+/// - The request body is wrapped as a stream and forwarded to the proxy host.
+/// - If the request fails to parse or the proxy host is unreachable, appropriate HTTP error
+///   responses are returned (`400 Bad Request` or `502 Bad Gateway`).
+///
+/// # Errors
+///
+/// - Returns `400 Bad Request` if the request URI cannot be parsed.
+/// - Returns `502 Bad Gateway` if the proxy host is unreachable.
+#[axum::debug_handler]
+async fn proxy_request(request: Request) -> Result<Response, Response> {
+    println!("proxy_request: {} {}", request.method(), request.uri());
+
+    let url = Url::options()
+        .base_url(Some(&Url::parse(PROXY_HOST.get().unwrap()).unwrap()))
+        .parse(&request.uri().to_string())
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Bad Request").into_response())?;
+
+    let mut headers = request.headers().clone();
+    headers.insert("Host", url.host_str().unwrap().parse().unwrap());
+
+    let (client, request) = CLIENT
+        .get_or_init(|| reqwest::Client::new())
+        .request(request.method().clone(), url)
+        .headers(headers)
+        .body(reqwest::Body::wrap_stream(
+            request.into_body().into_data_stream(),
+        ))
+        .build_split();
+
+    let request = request.map_err(|_| (StatusCode::BAD_REQUEST, "Bad Request").into_response())?;
+
+    let response = client
+        .execute(request)
+        .await
+        .map_err(|_| (StatusCode::BAD_GATEWAY, "Bad Gateway").into_response())?;
+
+    Ok((
+        response.status(),
+        response.headers().clone(),
+        axum::body::Body::new(reqwest::Body::from(response)),
+    )
+        .into_response())
+}
 
 /// Redirects incoming requests to the configured proxy host.
 ///
@@ -304,6 +378,7 @@ async fn main() {
     let mut dev_mode = false;
     let mut game_id = DEFAULT_GAME_ID;
     let mut open_browser = false;
+    let mut proxy_requests = false;
 
     let args: Vec<String> = env::args().collect();
     let launch_args: Vec<String> = args.iter().skip(1).cloned().collect();
@@ -327,6 +402,8 @@ async fn main() {
             "  --auto-close        Automatically exit the bridge after 10 seconds of inactivity",
             format!("  --url <URL>         Specify a custom URL for the MBF app (default: {})", DEFAULT_URL).as_str(),
             "  --open-browser      Open the browser automatically after starting the server (implied if not persistent)",
+            #[cfg(not(target_os = "macos"))]
+            "  --proxy             Proxy requests through the internal server to avoid mixed content errors",
             "",
             "Development Options:",
             "  --dev               Enable MBF development mode",
@@ -369,6 +446,12 @@ async fn main() {
     open_browser = args.contains(&"--open-browser".to_string());
     run_persistent = !args.contains(&"--auto-close".to_string());
     dev_mode = args.contains(&"--dev".to_string());
+    proxy_requests = args.contains(&"--proxy".to_string());
+
+    #[cfg(target_os = "macos")]
+    {
+        proxy_requests = true; // Always proxy on macOS to avoid mixed content errors
+    }
 
     // Parse custom URL, port, and game ID arguments.
     if let Some(url_index) = args.iter().position(|x| x == "--url") {
@@ -451,7 +534,7 @@ async fn main() {
                         .allow_private_network(true),
                 ),
         )
-        .fallback(redirect_request)
+        .fallback(proxy_request)
         .layer(axum::middleware::from_fn(update_last_request_time));
 
     // Bind the server listener.
@@ -476,6 +559,17 @@ async fn main() {
     }
 
     let mut browser_url = app_url.to_string();
+
+    // If proxying requests, set browser URL to the local server with the path from app_url preserved.
+    if proxy_requests {
+        // Parse the app URL with the Url crate and extract the path
+        let mut app_url = Url::parse(app_url).unwrap();
+        app_url.set_scheme("http").unwrap();
+        app_url.set_host(Some("127.0.0.1")).unwrap();
+        app_url.set_port(Some(assigned_port)).unwrap();
+        browser_url = app_url.to_string();
+    }
+
     if !query_strings.is_empty() {
         browser_url.push('?');
         for (key, value) in query_strings {
@@ -490,6 +584,7 @@ async fn main() {
     // Set the global proxy host.
     PROXY_HOST.get_or_init(|| app_url.to_string());
     println!("Server is running: {}", assigned_url);
+    println!("Browser URL: {}", browser_url);
 
     // Open browser if requested.
     if open_browser {
@@ -551,7 +646,12 @@ async fn main() {
 
     let tray_menu = Menu::new();
     tray_menu
-        .append_items(&[&menu_open, &menu_auto_run, &PredefinedMenuItem::separator(), &menu_quit])
+        .append_items(&[
+            &menu_open,
+            &menu_auto_run,
+            &PredefinedMenuItem::separator(),
+            &menu_quit,
+        ])
         .unwrap();
 
     let menu_receiver = MenuEvent::receiver();
@@ -630,12 +730,13 @@ async fn main() {
             }
         }
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(windows)]
         {
-            if let Ok(TrayIconEvent::Click {
+            if let Ok(TrayIconEvent::DoubleClick {
+                id: _,
+                position: _,
+                rect: _,
                 button: tray_icon::MouseButton::Left,
-                button_state: tray_icon::MouseButtonState::Down,
-                ..
             }) = tray_receiver.try_recv()
             {
                 start_browser(browser_url.clone());

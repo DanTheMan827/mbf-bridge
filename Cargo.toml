@@ -17,7 +17,7 @@ lto = true
 auto-launch = "0.5.0"
 open = "5.1.3"
 tao = "0.28.0"
-tray-icon = { version = "0.14.0", default-features = false, features = [] }
+tray-icon = { version = "0.20.0", default-features = false, features = [] }
 tokio = { version = "1.37.0", features = ["full"] }
 futures-util = "0.3.30"
 image = { version = "0.25.1", default-features = false, features = ["png"] }
