@@ -45,8 +45,10 @@ jobs:
           path: |
             ~/.cargo/
             target/
-          key: ${{ matrix.os }}-${{ matrix.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ matrix.os }}-${{ matrix.arch }}-cargo-
+          key: ${{ matrix.os }}-${{ matrix.arch }}-cargo-${{ matrix.build_type}}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ matrix.os }}-${{ matrix.arch }}-cargo-${{ matrix.build_type}}-${{ hashFiles('**/Cargo.lock') }}
+            ${{ matrix.os }}-${{ matrix.arch }}-cargo-${{ matrix.build_type}}
 
       - name: Install Rust toolchain
         run: rustup target add ${{ matrix.arch }}
