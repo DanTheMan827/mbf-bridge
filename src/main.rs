@@ -630,6 +630,8 @@ async fn main() {
             }
         }
 
+        #[cfg(not(target_os = "macos"))]
+        {
             if let Ok(TrayIconEvent::Click {
                 button: tray_icon::MouseButton::Left,
                 button_state: tray_icon::MouseButtonState::Down,
@@ -638,6 +640,7 @@ async fn main() {
             {
                 start_browser(browser_url.clone());
                 return;
+            }
         }
     });
 }
