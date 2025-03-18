@@ -18,22 +18,24 @@ jobs:
           - os: windows-latest
             arch: i686-pc-windows-msvc
             artifact_name: "mbf-bridge-windows-x86"
-            binary_name: "mbf_bridge.exe"
+            binary_extension: ".exe"
 
           - os: windows-latest
             arch: x86_64-pc-windows-msvc
             artifact_name: "mbf-bridge-windows-x64"
-            binary_name: "mbf_bridge.exe"
+            binary_extension: ".exe"
 
           - os: ubuntu-latest
             arch: x86_64-unknown-linux-gnu
             artifact_name: "mbf-bridge-linux-x64"
-            binary_name: "mbf_bridge"
 
           - os: macos-13
             arch: x86_64-apple-darwin
-            artifact_name: "mbf-bridge-macos-universal"
-            binary_name: "build"
+            artifact_name: "mbf-bridge-macos-intel"
+
+          - os: macos-13
+            arch: aarch64-apple-darwin
+            artifact_name: "mbf-bridge-macos-arm"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,34 +66,45 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            rustup target add aarch64-apple-darwin
+          cargo build --target ${{ matrix.arch }} --${{ matrix.build_type }}
 
-            cargo build --target x86_64-apple-darwin --${{ matrix.build_type }}
-            cargo build --target aarch64-apple-darwin --${{ matrix.build_type }}
-          else
-            cargo build --target ${{ matrix.arch }} --${{ matrix.build_type }}
-          fi
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}-${{ matrix.build_type }}
+          path: target/${{ matrix.arch }}/${{ matrix.build_type }}/mbf_bridge${{ matrix.binary_extension }}
 
-      - name: Prepare macOS app bundle (macOS only)
-        if: runner.os == 'macOS'
+  lipo:
+    name: "Create macOS universal binary"
+    runs-on: macos-13
+    needs: build
+    strategy:
+      matrix:
+        build_type: [ "release", "debug"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: mbf-bridge-macos-*-${{ matrix.build_type }}
+          path: target/
+
+      - name: Create universal binary
         run: |
           lipo -create -output ModsBeforeFriday.app/Contents/MacOS/mbf-bridge \
-              target/x86_64-apple-darwin/${{ matrix.build_type }}/mbf_bridge \
-              target/aarch64-apple-darwin/${{ matrix.build_type }}/mbf_bridge
+            target/mbf-bridge-macos-intel-${{ matrix.build_type }}/mbf_bridge \
+            target/mbf-bridge-macos-arm-${{ matrix.build_type }}/mbf_bridge
+
+      - name: Prepare macOS app bundle
+        run: |
           mkdir build
           mv ModsBeforeFriday.app build
 
       - name: Upload artifact
-        if: runner.os != 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}-${{ matrix.build_type }}
-          path: target/${{ matrix.arch }}/${{ matrix.build_type }}/${{ matrix.binary_name }}
-
-      - name: Upload artifact (macOS only)
-        if: runner.os != 'macOS'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact_name }}-${{ matrix.build_type }}
+          name: mbf-bridge-macos-universal-${{ matrix.build_type }}
           path: build
