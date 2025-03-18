@@ -35,7 +35,7 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use http::{Method, StatusCode};
 use reqwest::Url;
-use tao::event_loop::{self, EventLoopBuilder};
+use tao::event_loop::EventLoopBuilder;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -44,8 +44,7 @@ use tokio::{
 };
 use tower_http::cors::CorsLayer;
 use tray_icon::{
-    menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
-    TrayIconBuilder, TrayIconEvent,
+    menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem}, TrayIcon, TrayIconBuilder, TrayIconEvent
 };
 
 use uuid::Uuid;
@@ -445,16 +444,16 @@ async fn main() {
     // ------------------------------
     // Configuration and Command-Line Parsing
     // ------------------------------
-    let mut port = DEFAULT_PORT;
-    let mut run_persistent = true;
-    let mut app_url = DEFAULT_URL;
-    let mut dev_mode = false;
-    let mut game_id = DEFAULT_GAME_ID;
-    let mut open_browser = false;
-    let mut proxy_requests = false;
-
     let args: Vec<String> = env::args().collect();
     let launch_args: Vec<String> = args.iter().skip(1).cloned().collect();
+
+    let mut port = DEFAULT_PORT;
+    let run_persistent = !args.contains(&"--auto-close".to_string());
+    let mut app_url = DEFAULT_URL;
+    let dev_mode = args.contains(&"--dev".to_string());
+    let mut game_id = DEFAULT_GAME_ID;
+    let mut open_browser = args.contains(&"--open-browser".to_string());
+    let proxy_requests = args.contains(&"--proxy".to_string());
 
     // Display help message if requested.
     if args.contains(&"--help".to_string()) {
@@ -517,11 +516,6 @@ async fn main() {
         }
         return;
     }
-
-    open_browser = args.contains(&"--open-browser".to_string());
-    run_persistent = !args.contains(&"--auto-close".to_string());
-    dev_mode = args.contains(&"--dev".to_string());
-    proxy_requests = args.contains(&"--proxy".to_string());
 
     #[cfg(target_os = "macos")]
     {
@@ -734,7 +728,7 @@ async fn main() {
         }
     };
 
-    let server = {
+    let _ = {
         let server = {
             tokio::spawn(async move {
                 tokio::select! {
@@ -821,10 +815,9 @@ async fn main() {
     let tray_receiver = TrayIconEvent::receiver();
 
     // Create the tray icon.
-    let mut tray_icon = None;
+    let tray_icon: OnceLock<Option<TrayIcon>> = OnceLock::new();
 
     println!("Starting main loop");
-    let server = Arc::new(server);
     event_loop.run(move |event, _, control_flow| {
         *control_flow =tao::event_loop::ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(16));
 
@@ -844,14 +837,16 @@ async fn main() {
             let rgba = image.into_raw();
             let icon = tray_icon::Icon::from_rgba(rgba, width, height).unwrap();
 
-            tray_icon = Some(
-                TrayIconBuilder::new()
-                    .with_tooltip(format!("ModsBeforeFriday {:?}", launch_args).as_str())
-                    .with_icon(icon)
-                    .with_menu(Box::new(tray_menu.clone()))
-                    .build()
-                    .unwrap(),
-            );
+            let _ = tray_icon.get_or_init(|| {
+                Some(
+                    TrayIconBuilder::new()
+                        .with_tooltip(format!("ModsBeforeFriday {:?}", launch_args).as_str())
+                        .with_icon(icon)
+                        .with_menu(Box::new(tray_menu.clone()))
+                        .build()
+                        .unwrap(),
+                )
+            });
 
             #[cfg(target_os = "macos")]
             unsafe {
