@@ -39,8 +39,7 @@ use tao::event_loop::EventLoopBuilder;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    process::Command,
-    signal,
+    process::Command
 };
 use tower_http::cors::CorsLayer;
 use tray_icon::{
@@ -682,6 +681,8 @@ async fn main() {
 
     let shutdown_signal = {
         async move {
+            use tokio::signal;
+
             signal::ctrl_c()
                 .await
                 .expect("Failed to install Ctrl+C handler");
@@ -692,7 +693,8 @@ async fn main() {
         async move {
             #[cfg(unix)]
             {
-                use tokio::signal::unix::SignalKind;
+                use tokio::signal::unix::{signal, SignalKind};
+
                 let mut stream = signal(SignalKind::hangup())?;
                 stream.recv().await;
 
