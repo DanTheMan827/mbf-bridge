@@ -36,7 +36,6 @@ jobs:
             arch: aarch64-apple-darwin
             artifact_name: "mbf-bridge-macos-arm"
 
-        build_type: [ "release", "debug" ]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,10 +45,9 @@ jobs:
           path: |
             ~/.cargo/
             target/
-          key: ${{ matrix.os }}-${{ matrix.arch }}-cargo-${{ matrix.build_type}}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ matrix.os }}-${{ matrix.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ matrix.os }}-${{ matrix.arch }}-cargo-${{ matrix.build_type}}-${{ hashFiles('**/Cargo.lock') }}
-            ${{ matrix.os }}-${{ matrix.arch }}-cargo-${{ matrix.build_type}}
+            ${{ matrix.os }}-${{ matrix.arch }}-cargo-
 
       - name: Install Rust toolchain
         run: rustup target add ${{ matrix.arch }}
@@ -65,17 +63,20 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          if [[ "${{ matrix.build_type }}" == "release" ]]; then
-            cargo build --release --target ${{ matrix.arch }}
-          else
-            cargo build --target ${{ matrix.arch }}
-          fi
+          cargo build --release --target ${{ matrix.arch }}
+          cargo build --target ${{ matrix.arch }}
 
-      - name: Upload artifact
+      - name: Upload artifact (Release)
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}-${{ matrix.build_type }}
-          path: target/${{ matrix.arch }}/${{ matrix.build_type }}/mbf_bridge${{ matrix.binary_extension }}
+          name: ${{ matrix.artifact_name }}-release
+          path: target/${{ matrix.arch }}/release/mbf_bridge${{ matrix.binary_extension }}
+
+      - name: Upload artifact (Debug)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}-debug
+          path: target/${{ matrix.arch }}/debug/mbf_bridge${{ matrix.binary_extension }}
 
   lipo:
     name: "Create macOS universal binary"
