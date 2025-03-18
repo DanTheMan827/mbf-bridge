@@ -32,7 +32,7 @@ jobs:
           - os: macos-13
             arch: x86_64-apple-darwin
             artifact_name: "mbf-bridge-macos-universal"
-            artifact_path: "ModsBeforeFriday.app"
+            artifact_path: "build/ModsBeforeFriday.app"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -68,20 +68,19 @@ jobs:
 
             cargo build --target x86_64-apple-darwin --release
             cargo build --target aarch64-apple-darwin --release
-
-            mkdir -p target/universal-apple-darwin/release
-
-            lipo -create -output target/universal-apple-darwin/release/mbf_bridge \
-              target/x86_64-apple-darwin/release/mbf_bridge \
-              target/aarch64-apple-darwin/release/mbf_bridge
           else
             cargo build --target ${{ matrix.arch }} --release
           fi
 
       - name: Prepare macOS app bundle (macOS only)
         if: runner.os == 'macOS'
-        run: cp target/universal-apple-darwin/release/mbf_bridge ModsBeforeFriday.app/Contents/MacOS/mbf-bridge
-
+        run: |
+          lipo -create -output ModsBeforeFriday.app/Contents/MacOS/mbf-bridge \
+              target/x86_64-apple-darwin/release/mbf_bridge \
+              target/aarch64-apple-darwin/release/mbf_bridge
+          mkdir build
+          mv ModsBeforeFriday.app build
+          
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
