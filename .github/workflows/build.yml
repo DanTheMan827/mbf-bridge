@@ -13,29 +13,33 @@ jobs:
     continue-on-error: true
     strategy:
       matrix:
-        build_type: [ "release", "debug"]
         include:
           - os: windows-latest
             arch: i686-pc-windows-msvc
             artifact_name: "mbf-bridge-windows-x86"
             binary_extension: ".exe"
+            build_type: [ "release", "debug"]
 
           - os: windows-latest
             arch: x86_64-pc-windows-msvc
             artifact_name: "mbf-bridge-windows-x64"
             binary_extension: ".exe"
+            build_type: [ "release", "debug"]
 
           - os: ubuntu-latest
             arch: x86_64-unknown-linux-gnu
             artifact_name: "mbf-bridge-linux-x64"
+            build_type: [ "release", "debug"]
 
           - os: macos-13
             arch: x86_64-apple-darwin
             artifact_name: "mbf-bridge-macos-intel"
+            build_type: [ "release", "debug"]
 
           - os: macos-13
             arch: aarch64-apple-darwin
             artifact_name: "mbf-bridge-macos-arm"
+            build_type: [ "release", "debug"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,14 +65,14 @@ jobs:
             libglib2.0-dev \
             libgtk-3-dev
 
-      - name: Set macOS deployment target (macOS only)
-        if: runner.os == 'macOS'
-        run: echo "MACOSX_DEPLOYMENT_TARGET=10.13" >> $GITHUB_ENV
-
       - name: Build
         shell: bash
         run: |
-          cargo build --target ${{ matrix.arch }} --${{ matrix.build_type }}
+          if [[ "${{ matrix.build_type }}" == "release" ]]; then
+            cargo build --release --target ${{ matrix.arch }}
+          else
+            cargo build --target ${{ matrix.arch }}
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
