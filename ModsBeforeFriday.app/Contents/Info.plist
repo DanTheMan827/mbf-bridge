@@ -3,17 +3,17 @@
 <plist version="1.0">
   <dict>
     <key>CFBundleDisplayName</key>
-    <string>Tango ADB</string>
+    <string>ModsBeforeFriday ADB Bridge</string>
     <key>CFBundleExecutable</key>
-    <string>tango-bridge</string>
+    <string>mbf-bridge</string>
     <key>CFBundleIconFile</key>
-    <string>tango.icns</string>
+    <string>mbf.icns</string>
     <key>CFBundleIdentifier</key>
-    <string>dev.tangoapp.desktop</string>
+    <string>dev.mbfapp.desktop</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Tango</string>
+    <string>ModsBeforeFriday</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -29,6 +29,6 @@
     <key>NSHighResolutionCapable</key>
     <true />
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright (C) 2024 Tango ADB. All rights reserved</string>
+    <string>Copyright (C) 2025 DanTheMan827</string>
   </dict>
 </plist>

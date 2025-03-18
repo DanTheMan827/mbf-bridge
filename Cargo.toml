@@ -1,14 +1,13 @@
 [package]
 name = "mbf_bridge"
-description = "Tango ADB Desktop Application"
+description = "ModsBeforeFriday ADB Bridge"
 version = "0.1.0"
 edition = "2021"
 build = "build.rs"
 
 [package.metadata.winresource]
-ProductName = "Tango ADB"
-OriginalFilename = "tango-bridge.exe"
-LegalCopyright = "Copyright © 2024-2025 Tango ADB"
+ProductName = "ModsBeforeFriday ADB Bridge"
+OriginalFilename = "mbf_bridge.exe"
 
 [profile.release]
 strip = true

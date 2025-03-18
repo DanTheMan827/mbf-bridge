@@ -10,12 +10,12 @@ for arch in $archs; do
   SDKROOT=$(xcrun -sdk $sdk_version --show-sdk-path) \
     MACOSX_DEPLOYMENT_TARGET=$(xcrun -sdk $sdk_version --show-sdk-platform-version) \
       cargo build --target $target --release
-  cp -r mbf-bridge.app target/$target/release
-  cp target/$target/release/mbf_bridge target/$target/release/mbf-bridge.app/Contents/MacOS/tango-bridge
+  cp -r ModsBeforeFriday.app target/$target/release
+  cp target/$target/release/mbf_bridge target/$target/release/ModsBeforeFriday.app/Contents/MacOS/mbf-bridge
   mkdir -p bin/mac/$arch
-  rm -f bin/mac/$arch/tango-bridge.zip
+  rm -f bin/mac/$arch/mbf-bridge.zip
   pushd target/$target/release
-  zip -r ../../../bin/mac/$arch/tango-bridge.zip mbf-bridge.app
+  zip -r ../../../bin/mac/$arch/mbf-bridge.zip ModsBeforeFriday.app
   popd
 done
 
@@ -23,13 +23,13 @@ mv bin/mac/x86_64 bin/mac/x86-64
 
 arch="universal"
 mkdir -p target/$arch/release
-cp -r mbf-bridge.app target/$arch/release
+cp -r ModsBeforeFriday.app target/$arch/release
 lipo -create \
-  -output target/$arch/release/mbf-bridge.app/Contents/MacOS/tango-bridge \
+  -output target/$arch/release/ModsBeforeFriday.app/Contents/MacOS/mbf-bridge \
   target/x86_64-apple-darwin/release/mbf_bridge \
   target/aarch64-apple-darwin/release/mbf_bridge
 mkdir -p bin/mac/$arch
-rm -f bin/mac/$arch/tango-bridge.zip
+rm -f bin/mac/$arch/mbf-bridge.zip
 pushd target/$arch/release
-zip -r ../../../bin/mac/$arch/tango-bridge.zip mbf-bridge.app
+zip -r ../../../bin/mac/$arch/mbf-bridge.zip ModsBeforeFriday.app
 popd

@@ -16,23 +16,23 @@ jobs:
         include:
           - os: windows-latest
             arch: i686-pc-windows-msvc
-            artifact_name: "tango-bridge-windows-x86"
+            artifact_name: "mbf-bridge-windows-x86"
             artifact_path: "target/i686-pc-windows-msvc/release/mbf_bridge.exe"
 
           - os: windows-latest
             arch: x86_64-pc-windows-msvc
-            artifact_name: "tango-bridge-windows-x64"
+            artifact_name: "mbf-bridge-windows-x64"
             artifact_path: "target/x86_64-pc-windows-msvc/release/mbf_bridge.exe"
 
           - os: ubuntu-latest
             arch: x86_64-unknown-linux-gnu
-            artifact_name: "tango-bridge-linux-x64"
+            artifact_name: "mbf-bridge-linux-x64"
             artifact_path: "target/x86_64-unknown-linux-gnu/release/mbf_bridge"
 
           - os: macos-13
             arch: x86_64-apple-darwin
-            artifact_name: "tango-bridge-macos-x64"
-            artifact_path: "mbf-bridge.app"
+            artifact_name: "mbf-bridge-macos-x64"
+            artifact_path: "ModsBeforeFriday.app"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -65,7 +65,7 @@ jobs:
 
       - name: Prepare macOS app bundle (macOS only)
         if: runner.os == 'macOS'
-        run: cp target/x86_64-apple-darwin/release/mbf_bridge mbf-bridge.app/Contents/MacOS/tango-bridge
+        run: cp target/x86_64-apple-darwin/release/mbf_bridge ModsBeforeFriday.app/Contents/MacOS/mbf-bridge
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

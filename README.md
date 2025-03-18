@@ -1,6 +1,6 @@
-# Tango Bridge
+# ModsBeforeFriday Bridge
 
-Tango Bridge is a system-tray application that can start ADB and forward connections to Tango Web App running in a browser.
+ModsBeforeFriday Bridge is a system-tray application that can start ADB and forward connections to ModsBeforeFriday Web App running in a browser.
 
 An ADB executable for each platform is included.
 

@@ -213,20 +213,23 @@ fn extract_origin(app_url: &str) -> Option<String> {
     None
 }
 
-const ARG_AUTO_RUN: &str = "--auto-run";
+const DEFAULT_PORT: u16 = 25037;
+const DEFAULT_URL: &str = "https://mbf.bsquest.xyz/";
+const DEFAULT_GAME_ID: &str = "com.beatgames.beatsaber";
 
 #[tokio::main]
 async fn main() {
 
-    let mut port = 25037;
+    let mut port = DEFAULT_PORT;
     let mut run_persistent = true;
-    let mut app_url = "https://dantheman827.github.io/ModsBeforeFriday/";
+    let mut app_url = DEFAULT_URL;
     let mut dev_mode = false;
-    let mut game_id = "com.beatgames.beatsaber";
+    let mut game_id = DEFAULT_GAME_ID;
     let mut open_browser = false;
 
     // Parse command-line arguments
     let args: Vec<String> = env::args().collect();
+    let launch_args: Vec<String> = args.iter().skip(1).cloned().collect();
 
     // Check for specific arguments
     if args.contains(&"--help".to_string()) {
@@ -236,16 +239,16 @@ async fn main() {
             "Options:",
             "  --help              Show this help message",
             "  --port <PORT>       Specify a custom port for the server (default: 25037, or 0 if not persistent)",
-            "  --persistent        Keep the server running after the browser is closed",
+            "  --auto-close        Automatically exit the bridge after 10 seconds of inactivity",
             "  --url <URL>         Specify a custom URL for the MBF app (default: https://mbf.bsquest.xyz/)",
             "  --open-browser      Open the browser automatically after starting the server (implied if not persistent)",
             "",
             "Development Options:",
-            "  --dev               Enable development mode (adds 'dev=true' to the query string)",
+            "  --dev               Enable MBF development mode",
             "  --game <ID>         Specify a custom game ID for the MBF app (default: com.beatgames.beatsaber)",
             "",
             "Behavior:",
-            "  If --persistent is not specified:",
+            "  If --auto-close is specified:",
             "    - The server will shut down after 10 seconds of inactivity.",
             "    - The browser will open automatically (--open-browser is implied).",
             "    - The server will use a random port (--port 0 is implied).",
@@ -280,7 +283,7 @@ async fn main() {
     }
 
     open_browser = args.contains(&"--open-browser".to_string());
-    run_persistent = args.contains(&"--persistent".to_string());
+    run_persistent = !args.contains(&"--auto-close".to_string());
     dev_mode = args.contains(&"--dev".to_string());
 
     // Check for custom URL argument
@@ -386,11 +389,13 @@ async fn main() {
         query_strings.push(("dev", "true".to_string()));
     }
 
-    if game_id != "com.beatgames.beatsaber" {
-        query_strings.push(("game", game_id.to_string()));
+    if game_id != DEFAULT_GAME_ID {
+        query_strings.push(("game", url_encode(game_id)));
     }
 
-    query_strings.push(("bridge", format!("{}:{}", assigned_ip, assigned_port)));
+    if assigned_port != DEFAULT_PORT {
+        query_strings.push(("bridge", format!("{}:{}", assigned_ip, assigned_port)));
+    }
 
     let mut browser_url = app_url.to_string();
 
@@ -448,9 +453,9 @@ async fn main() {
     let menu_open = MenuItem::new("Open", true, None);
 
     let auto_launch = AutoLaunchBuilder::new()
-        .set_app_name("Tango")
+        .set_app_name(format!("ModsBeforeFriday Bridge {:?}", launch_args).as_str())
         .set_app_path(env::current_exe().unwrap().to_str().unwrap())
-        .set_args(&[ARG_AUTO_RUN])
+        .set_args(&launch_args)
         .set_use_launch_agent(true)
         .build()
         .unwrap();
@@ -502,7 +507,7 @@ async fn main() {
 
         if let tao::event::Event::NewEvents(tao::event::StartCause::Init) = event {
             let image = image::load_from_memory_with_format(
-                include_bytes!("../tango.png"),
+                include_bytes!("../mbf.png"),
                 image::ImageFormat::Png,
             )
             .unwrap()
@@ -513,7 +518,7 @@ async fn main() {
 
             tray_icon = Some(
                 TrayIconBuilder::new()
-                    .with_tooltip("Tango (rs)")
+                    .with_tooltip(format!("ModsBeforeFriday {:?}", launch_args).as_str())
                     .with_icon(icon)
                     .with_menu(Box::new(tray_menu.clone()))
                     .build()
