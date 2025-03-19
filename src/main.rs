@@ -15,37 +15,76 @@
 //! ## ADB Extraction
 //! For Windows and Linux, if ADB isn’t already running, the corresponding binary (and related DLLs on Windows)
 //! is extracted to a subfolder in the temporary directory. This subfolder is named using a randomly generated UUID.
-//!
-//! **Note:** Currently, the UUID is generated using `Uuid::new_v4()`. Replace this with a UUID v7 generator if available.
 
-use std::{
-    env, path::Path, process::{exit, Stdio}, sync::{Arc, Mutex, OnceLock}, time::{Duration, Instant}
-};
+// ------------------------------
+// Constants
+// ------------------------------
+/// Default port for the local server.
+const DEFAULT_PORT: u16 = 25037;
 
+/// Default URL for the MBF app.
+const DEFAULT_URL: &str = "https://dantheman827.github.io/ModsBeforeFriday/";
+
+/// Default game ID for the MBF app.
+const DEFAULT_GAME_ID: &str = "com.beatgames.beatsaber";
+
+/// Argument to automatically start the server without a tray icon.
+const AUTO_START_ARG: &str = "--auto-start";
+
+// ------------------------------
+// Browser Paths
+// ------------------------------
+/// Path to the Microsoft Edge executable.
+const EDGE_PATH: OnceLock<Option<String>> = OnceLock::new();
+
+/// Path to the Google Chrome executable.
+const CHROME_PATH: OnceLock<Option<String>> = OnceLock::new();
+
+/// Path to the Google Chrome executable (alternative name).
+const GOOGLE_CHROME_PATH: OnceLock<Option<String>> = OnceLock::new();
+
+// ------------------------------
+// Global Variables
+// ------------------------------
+
+/// Global proxy host used for redirection.
+const PROXY_HOST: OnceLock<String> = OnceLock::new();
+
+/// Global HTTP client.
+const CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+// ------------------------------
+// Imports
+// ------------------------------
 use auto_launch::AutoLaunchBuilder;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Request,
-    },
-    response::{IntoResponse, Response},
-    routing::get,
-    Router,
+    }, response::{IntoResponse, Response}, routing::get, serve::Serve, Router
 };
 use futures_util::{SinkExt, StreamExt};
 use http::{Method, StatusCode};
 use reqwest::Url;
+use single_instance::SingleInstance;
+use std::{
+    env,
+    path::Path,
+    process::{exit, Stdio},
+    sync::{Arc, Mutex, OnceLock},
+    time::{Duration, Instant},
+};
 use tao::event_loop::EventLoopBuilder;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    process::Command
+    process::Command,
 };
 use tower_http::cors::CorsLayer;
 use tray_icon::{
-    menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem}, TrayIcon, TrayIconBuilder, TrayIconEvent
+    menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
+    TrayIcon, TrayIconBuilder, TrayIconEvent,
 };
-
 use uuid::Uuid;
 
 /// Starts the ADB server using the provided executable path.
@@ -197,7 +236,7 @@ async fn adb_connect_or_start() -> tokio::io::Result<TcpStream> {
 
 /// Attempts to locate an executable by checking direct paths, the PATH variable,
 /// and the App Paths registry on Windows.
-fn lookup_executable(command: &str) -> Option<String> {
+fn locate_executable(command: &str) -> Option<String> {
     // Step 1: If the command is a direct path, check if it exists.
     let command_path = Path::new(command);
     if command_path.exists() && command_path.is_file() {
@@ -227,12 +266,14 @@ fn lookup_executable(command: &str) -> Option<String> {
     #[cfg(windows)]
     {
         use std::path::PathBuf;
-        use winreg::RegKey;
         use winreg::enums::*;
+        use winreg::RegKey;
 
         // Open the registry key for App Paths.
         let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-        if let Ok(app_paths) = hklm.open_subkey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths") {
+        if let Ok(app_paths) =
+            hklm.open_subkey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths")
+        {
             for candidate in &candidate_names {
                 if let Ok(subkey) = app_paths.open_subkey(candidate) {
                     // The default value usually contains the full path to the executable.
@@ -251,6 +292,7 @@ fn lookup_executable(command: &str) -> Option<String> {
     None
 }
 
+/// Attempts to start a chromium-based browser in app mode with the specified URL.
 fn start_chromium_app(binary: &Option<String>, url: &str) -> bool {
     if let Some(executable) = binary {
         // Launch the chromium-based browse in app mode with our url.
@@ -265,33 +307,38 @@ fn start_chromium_app(binary: &Option<String>, url: &str) -> bool {
     return false;
 }
 
-static EDGE_PATH: OnceLock<Option<String>> = OnceLock::new();
-static CHROME_PATH: OnceLock<Option<String>> = OnceLock::new();
-static GOOGLE_CHROME_PATH: OnceLock<Option<String>> = OnceLock::new();
-
 /// Opens the default browser with the specified URL.
 ///
 /// # Arguments
 ///
 /// * `url` - The URL to open.
-fn start_browser(url: &Arc<String>) {
+fn start_browser(url: &Arc<String>) -> tokio::task::JoinHandle<()> {
     let url = Arc::clone(&url);
 
-    let _ = tokio::spawn(async move {
-        if start_chromium_app(EDGE_PATH.get_or_init(|| lookup_executable("msedge")), url.as_ref()) {
+    tokio::spawn(async move {
+        if start_chromium_app(
+            EDGE_PATH.get_or_init(|| locate_executable("msedge")),
+            url.as_ref(),
+        ) {
             return;
         }
 
-        if start_chromium_app(CHROME_PATH.get_or_init(|| lookup_executable("chrome")), url.as_ref()) {
+        if start_chromium_app(
+            CHROME_PATH.get_or_init(|| locate_executable("chrome")),
+            url.as_ref(),
+        ) {
             return;
         }
 
-        if start_chromium_app(GOOGLE_CHROME_PATH.get_or_init(|| lookup_executable("google-chrome")), url.as_ref()) {
+        if start_chromium_app(
+            GOOGLE_CHROME_PATH.get_or_init(|| locate_executable("google-chrome")),
+            url.as_ref(),
+        ) {
             return;
         }
 
         open::that_detached(url.as_ref()).unwrap();
-    });
+    })
 }
 
 /// Handles incoming websocket connections and proxies data to/from the ADB server.
@@ -332,12 +379,6 @@ async fn handle_websocket(ws: WebSocket) {
         }
     );
 }
-
-/// Global proxy host used for redirection.
-static PROXY_HOST: OnceLock<String> = OnceLock::new();
-
-/// Global HTTP client.
-static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
 /// Handles proxying of HTTP requests to the configured proxy host.
 ///
@@ -434,9 +475,39 @@ fn extract_origin(app_url: &str) -> Option<String> {
     None
 }
 
-const DEFAULT_PORT: u16 = 25037;
-const DEFAULT_URL: &str = "https://dantheman827.github.io/ModsBeforeFriday/";
-const DEFAULT_GAME_ID: &str = "com.beatgames.beatsaber";
+struct ServerInfo {
+    listener: Option<TcpListener>,
+    assigned_ip: String,
+    assigned_port: u16,
+    assigned_url: String,
+}
+
+impl ServerInfo {
+    async fn new(create_listener: bool, assigned_ip: String, assigned_port: Option<u16>) -> Self {
+        let assigned_port = assigned_port.unwrap_or(0);
+        let listener: Option<TcpListener> = if create_listener {
+            Some(TcpListener::bind(format!("{}:{}", assigned_ip, assigned_port)).await.unwrap())
+        } else {
+            None
+        };
+
+        let assigned_url:String = if let Some(ref listener) = listener {
+            let local_addr = listener.local_addr().unwrap();
+            let assigned_port = local_addr.port();
+
+            format!("http://{}:{}", assigned_ip, assigned_port)
+        } else {
+            format!("http://{}:{}", assigned_ip, assigned_port)
+        };
+
+        Self {
+            listener: listener,
+            assigned_ip,
+            assigned_port,
+            assigned_url,
+        }
+    }
+}
 
 /// Entry point of the application.
 #[tokio::main]
@@ -445,14 +516,19 @@ async fn main() {
     // Configuration and Command-Line Parsing
     // ------------------------------
     let args: Vec<String> = env::args().collect();
-    let launch_args: Vec<String> = args.iter().skip(1).cloned().collect();
+    let launch_args: Vec<String> = args
+        .iter()
+        .skip(1)
+        .filter(|item| **item != AUTO_START_ARG)
+        .cloned()
+        .collect();
 
     let mut port = DEFAULT_PORT;
     let run_persistent = !args.contains(&"--auto-close".to_string());
     let mut app_url = DEFAULT_URL;
     let dev_mode = args.contains(&"--dev".to_string());
     let mut game_id = DEFAULT_GAME_ID;
-    let mut open_browser = args.contains(&"--open-browser".to_string());
+    let mut open_browser = !args.contains(&AUTO_START_ARG.to_string());
 
     #[cfg(not(target_os = "macos"))]
     let proxy_requests = args.contains(&"--proxy".to_string());
@@ -478,7 +554,6 @@ async fn main() {
             format!("  --port <PORT>       Specify a custom port for the server (default: {}, or 0 if not persistent)", DEFAULT_PORT).as_str(),
             "  --auto-close        Automatically exit the bridge after 10 seconds of inactivity",
             format!("  --url <URL>         Specify a custom URL for the MBF app (default: {})", DEFAULT_URL).as_str(),
-            "  --open-browser      Open the browser automatically after starting the server (implied if not persistent)",
             #[cfg(not(target_os = "macos"))]
             "  --proxy             Proxy requests through the internal server to avoid mixed content errors",
             #[cfg(windows)]
@@ -491,7 +566,6 @@ async fn main() {
             "Behavior:",
             "  If --auto-close is specified:",
             "    - The server will shut down after 10 seconds of inactivity.",
-            "    - The browser will open automatically (--open-browser is implied).",
             "    - The server will use a random port (--port 0 is implied).",
         ]
         .join("\n");
@@ -553,6 +627,15 @@ async fn main() {
     }
 
     // ------------------------------
+    // App Title
+    // ------------------------------
+    let app_title: &str = if launch_args.len() > 0 {
+        Box::leak(format!("ModsBeforeFriday Bridge {:?}", launch_args).into_boxed_str())
+    } else {
+        "ModsBeforeFriday Bridge"
+    };
+
+    // ------------------------------
     // ADB Server Setup
     // ------------------------------
     // Spawn a background task to ensure ADB is running.
@@ -577,15 +660,21 @@ async fn main() {
     };
 
     // Determine allowed origins for CORS.
-    let mut allowed_origins = vec![
-        "http://localhost:3000",
-        "https://localhost:3000",
-        "https://mbf.bsquest.xyz",
-    ];
     let app_origin = extract_origin(app_url).unwrap();
-    if !allowed_origins.contains(&app_origin.as_str()) {
-        allowed_origins.push(app_origin.as_str());
-    }
+    let allowed_origins = {
+        let mut allowed_origins = vec![
+            "http://localhost:3000",
+            "https://localhost:3000",
+            "https://mbf.bsquest.xyz",
+        ];
+
+        if !allowed_origins.contains(&app_origin.as_str()) {
+            allowed_origins.push(app_origin.as_str());
+        }
+
+        allowed_origins
+    };
+
     println!("Allowed Origins: {:?}", allowed_origins);
 
     // Define the Axum router and nested routes.
@@ -613,56 +702,67 @@ async fn main() {
         .fallback(proxy_request)
         .layer(axum::middleware::from_fn(update_last_request_time));
 
+    // ------------------------------
+    // Single Instance Check
+    // ------------------------------
+    let instance = SingleInstance::new(app_title).unwrap();
+
     // Bind the server listener.
-    let listener = TcpListener::bind(format!("127.0.0.1:{}", port))
-        .await
-        .unwrap();
-    let local_addr = listener.local_addr().unwrap();
-    let assigned_ip = local_addr.ip().to_string();
-    let assigned_port = local_addr.port();
-    let assigned_url = format!("http://{}:{}", assigned_ip, assigned_port);
+    let server_info = ServerInfo::new(instance.is_single(), "127.0.0.1".to_string(), Some(port)).await;
 
-    // Build query string parameters for the browser URL.
-    let mut query_strings: Vec<(&str, String)> = Vec::new();
-    if dev_mode {
-        query_strings.push(("dev", "true".to_string()));
-    }
-    if game_id != DEFAULT_GAME_ID {
-        query_strings.push(("game", url_encode(game_id)));
-    }
-    if assigned_port != DEFAULT_PORT {
-        query_strings.push(("bridge", format!("{}:{}", assigned_ip, assigned_port)));
-    }
+    // Assign the browser URL with query parameters.
+    let browser_url = {
+        let mut browser_url = app_url.to_string();
 
-    let mut browser_url = app_url.to_string();
-
-    // If proxying requests, set browser URL to the local server with the path from app_url preserved.
-    if proxy_requests {
-        // Parse the app URL with the Url crate and extract the path
-        let mut app_url = Url::parse(app_url).unwrap();
-        app_url.set_scheme("http").unwrap();
-        app_url.set_host(Some("127.0.0.1")).unwrap();
-        app_url.set_port(Some(assigned_port)).unwrap();
-        browser_url = app_url.to_string();
-    }
-
-    if !query_strings.is_empty() {
-        browser_url.push('?');
-        for (key, value) in query_strings {
-            browser_url.push_str(key);
-            browser_url.push('=');
-            browser_url.push_str(&url_encode(&value));
-            browser_url.push('&');
+        // If proxying requests, set browser URL to the local server with the path from app_url preserved.
+        if proxy_requests {
+            // Parse the app URL with the Url crate and extract the path
+            let mut app_url = Url::parse(app_url).unwrap();
+            app_url.set_scheme("http").unwrap();
+            app_url.set_host(Some(server_info.assigned_ip.as_str())).unwrap();
+            app_url.set_port(Some(server_info.assigned_port)).unwrap();
+            browser_url = app_url.to_string();
         }
-        browser_url.pop(); // Remove trailing '&'
-    }
+
+        // Build query string parameters for the browser URL.
+        let mut query_strings: Vec<(&str, String)> = Vec::new();
+        if dev_mode {
+            query_strings.push(("dev", "true".to_string()));
+        }
+        if game_id != DEFAULT_GAME_ID {
+            query_strings.push(("game", url_encode(game_id)));
+        }
+        if server_info.assigned_port != DEFAULT_PORT {
+            query_strings.push(("bridge", format!("{}:{}", server_info.assigned_ip, server_info.assigned_port)));
+        }
+
+        // Append query strings to the browser URL.
+        if !query_strings.is_empty() {
+            browser_url.push('?');
+            for (key, value) in query_strings {
+                browser_url.push_str(key);
+                browser_url.push('=');
+                browser_url.push_str(&url_encode(&value));
+                browser_url.push('&');
+            }
+            browser_url.pop(); // Remove trailing '&'
+        }
+
+        browser_url
+    };
 
     // Set the global proxy host.
     PROXY_HOST.get_or_init(|| app_url.to_string());
-    println!("Server is running: {}", assigned_url);
+    println!("Server is running: {}", server_info.assigned_url);
     println!("Browser URL: {}", browser_url);
 
     let browser_url = Arc::new(browser_url);
+
+    if !instance.is_single() && port > 0 {
+        let _ = start_browser(&browser_url).await;
+
+        return;
+    }
 
     // Open browser if requested.
     if open_browser {
@@ -740,6 +840,7 @@ async fn main() {
 
     let _ = {
         let server = {
+            let listener = server_info.listener.unwrap();
             tokio::spawn(async move {
                 tokio::select! {
                     _ = axum::serve(listener, app) => {
@@ -780,9 +881,8 @@ async fn main() {
 
     if !run_persistent.as_ref() {
         event_loop.run(move |_, _, control_flow| {
-            *control_flow = tao::event_loop::ControlFlow::WaitUntil(
-                Instant::now() + Duration::from_millis(16),
-            );
+            *control_flow =
+                tao::event_loop::ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(16));
         });
     }
 
@@ -790,13 +890,20 @@ async fn main() {
     let menu_open = MenuItem::new("Open", true, None);
 
     // Create the auto-launch configuration.
-    let auto_launch = AutoLaunchBuilder::new()
-        .set_app_name(format!("ModsBeforeFriday Bridge {:?}", launch_args).as_str())
-        .set_app_path(env::current_exe().unwrap().to_str().unwrap())
-        .set_args(&launch_args)
-        .set_use_launch_agent(true)
-        .build()
-        .unwrap();
+    let auto_launch = {
+        // Clone the launch arguments and add the auto-close flag.
+        let mut auto_launch_args = launch_args.clone();
+        auto_launch_args.push(AUTO_START_ARG.to_string());
+
+        // Create the auto-launch configuration.
+        AutoLaunchBuilder::new()
+            .set_app_name(app_title)
+            .set_app_path(env::current_exe().unwrap().to_str().unwrap())
+            .set_args(&auto_launch_args)
+            .set_use_launch_agent(true)
+            .build()
+            .unwrap()
+    };
 
     // Create the auto-run menu item.
     let menu_auto_run = CheckMenuItem::new(
@@ -823,21 +930,24 @@ async fn main() {
     // Create the event receivers.
     let menu_receiver = MenuEvent::receiver();
 
+    // Create the tray icon event receiver.
     #[cfg(windows)]
     let tray_receiver = TrayIconEvent::receiver();
 
     // Create the tray icon.
     let tray_icon: OnceLock<Option<TrayIcon>> = OnceLock::new();
 
-    println!("Starting main loop");
+    println!("Starting event loop");
     event_loop.run(move |event, _, control_flow| {
-        *control_flow =tao::event_loop::ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(16));
+        *control_flow =
+            tao::event_loop::ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(16));
 
         if let tao::event::Event::Reopen { .. } = event {
             start_browser(&browser_url);
             return;
         }
 
+        // Handle initialization events.
         if let tao::event::Event::NewEvents(tao::event::StartCause::Init) = event {
             let image = image::load_from_memory_with_format(
                 include_bytes!("../mbf.png"),
@@ -852,7 +962,7 @@ async fn main() {
             let _ = tray_icon.get_or_init(|| {
                 Some(
                     TrayIconBuilder::new()
-                        .with_tooltip(format!("ModsBeforeFriday {:?}", launch_args).as_str())
+                        .with_tooltip(app_title)
                         .with_icon(icon)
                         .with_menu(Box::new(tray_menu.clone()))
                         .build()
@@ -868,11 +978,15 @@ async fn main() {
             }
         }
 
+        // Handle menu events.
         if let Ok(event) = menu_receiver.try_recv() {
+            // Open the browser
             if event.id == menu_open.id() {
                 start_browser(&browser_url);
                 return;
             }
+
+            // Toggle auto-run at startup
             if event.id == menu_auto_run.id() {
                 if auto_launch.is_enabled().unwrap() {
                     auto_launch.disable().unwrap();
@@ -882,6 +996,8 @@ async fn main() {
                 menu_auto_run.set_checked(auto_launch.is_enabled().unwrap());
                 return;
             }
+
+            // Quit the application
             if event.id == menu_quit.id() {
                 let mut event_loop_running = event_loop_running.as_ref().lock().unwrap();
                 *event_loop_running = false;
@@ -890,19 +1006,18 @@ async fn main() {
             }
         }
 
+        // Handle tray icon double-click.
         #[cfg(windows)]
-        let _ = {
-            if let Ok(TrayIconEvent::DoubleClick {
-                id: _,
-                position: _,
-                rect: _,
-                button: tray_icon::MouseButton::Left,
-            }) = tray_receiver.try_recv()
-            {
-                start_browser(&browser_url);
-                return;
-            }
-        };
+        if let Ok(TrayIconEvent::DoubleClick {
+            id: _,
+            position: _,
+            rect: _,
+            button: tray_icon::MouseButton::Left,
+        }) = tray_receiver.try_recv()
+        {
+            start_browser(&browser_url);
+            return;
+        }
 
         return;
     });
