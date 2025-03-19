@@ -87,6 +87,10 @@ struct Args {
     /// Ignore the package ID check during qmod installation
     #[arg[long, default_value_t = false, help_heading = "Development Options"]]
     ignore_package_id: bool,
+
+    /// Additional HTTP origins to allow for CORS
+    #[arg[long = "origin", name = "ORIGIN", help_heading = "Development Options"]]
+    additional_origins: Vec<String>,
 }
 
 /// Entry point of the application.
@@ -176,6 +180,14 @@ async fn main() {
 
         if !allowed_origins.contains(&app_origin.as_str()) {
             allowed_origins.push(app_origin.as_str());
+        }
+
+        if args.additional_origins.len() > 0 {
+            for origin in args.additional_origins {
+                if !allowed_origins.contains(&origin.as_str()) {
+                    allowed_origins.push(Box::leak(origin.into_boxed_str()));
+                }
+            }
         }
 
         allowed_origins
