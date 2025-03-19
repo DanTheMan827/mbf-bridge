@@ -35,23 +35,23 @@ const AUTO_START_ARG: &str = "--auto-start";
 // Browser Paths
 // ------------------------------
 /// Path to the Microsoft Edge executable.
-const EDGE_PATH: OnceLock<Option<String>> = OnceLock::new();
+static EDGE_PATH: OnceLock<Option<String>> = OnceLock::new();
 
 /// Path to the Google Chrome executable.
-const CHROME_PATH: OnceLock<Option<String>> = OnceLock::new();
+static CHROME_PATH: OnceLock<Option<String>> = OnceLock::new();
 
 /// Path to the Google Chrome executable (alternative name).
-const GOOGLE_CHROME_PATH: OnceLock<Option<String>> = OnceLock::new();
+static GOOGLE_CHROME_PATH: OnceLock<Option<String>> = OnceLock::new();
 
 // ------------------------------
 // Global Variables
 // ------------------------------
 
 /// Global proxy host used for redirection.
-const PROXY_HOST: OnceLock<String> = OnceLock::new();
+static PROXY_HOST: OnceLock<String> = OnceLock::new();
 
 /// Global HTTP client.
-const CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
 // ------------------------------
 // Imports
@@ -752,7 +752,7 @@ async fn main() {
     };
 
     // Set the global proxy host.
-    PROXY_HOST.get_or_init(|| app_url.to_string());
+    let _ = PROXY_HOST.set(app_url.to_string());
     println!("Server is running: {}", server_info.assigned_url);
     println!("Browser URL: {}", browser_url);
 
