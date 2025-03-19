@@ -527,6 +527,7 @@ async fn main() {
     let run_persistent = !args.contains(&"--auto-close".to_string());
     let mut app_url = DEFAULT_URL;
     let dev_mode = args.contains(&"--dev".to_string());
+    let ignore_package_id = args.contains(&"--ignore-package-id".to_string());
     let mut game_id = DEFAULT_GAME_ID;
     let mut open_browser = !args.contains(&AUTO_START_ARG.to_string());
 
@@ -550,18 +551,19 @@ async fn main() {
             .as_str(),
             "",
             "Options:",
-            "  --help              Show this help message",
-            format!("  --port <PORT>       Specify a custom port for the server (default: {}, or 0 if not persistent)", DEFAULT_PORT).as_str(),
-            "  --auto-close        Automatically exit the bridge after 10 seconds of inactivity",
-            format!("  --url <URL>         Specify a custom URL for the MBF app (default: {})", DEFAULT_URL).as_str(),
+            "  --help                Show this help message",
+            format!("  --port <PORT>         Specify a custom port for the server (default: {}, or 0 if not persistent)", DEFAULT_PORT).as_str(),
+            "  --auto-close          Automatically exit the bridge after 10 seconds of inactivity",
+            format!("  --url <URL>           Specify a custom URL for the MBF app (default: {})", DEFAULT_URL).as_str(),
             #[cfg(not(target_os = "macos"))]
-            "  --proxy             Proxy requests through the internal server to avoid mixed content errors",
+            "  --proxy               Proxy requests through the internal server to avoid mixed content errors",
             #[cfg(windows)]
-            "  --console           Allocate a console window to display logs",
+            "  --console             Allocate a console window to display logs",
             "",
             "Development Options:",
-            "  --dev               Enable MBF development mode",
-            "  --game <ID>         Specify a custom game ID for the MBF app (default: com.beatgames.beatsaber)",
+            "  --dev                 Enable MBF development mode",
+            "  --game-id <ID>        Specify a custom game ID for the MBF app (default: com.beatgames.beatsaber)",
+            "  --ignore-package-id   Ignore the package ID check during qmod installation",
             "",
             "Behavior:",
             "  If --auto-close is specified:",
@@ -614,7 +616,7 @@ async fn main() {
             }
         }
     }
-    if let Some(game_index) = args.iter().position(|x| x == "--game") {
+    if let Some(game_index) = args.iter().position(|x| x == "--game-id") {
         if let Some(game_str) = args.get(game_index + 1) {
             game_id = game_str;
         }
@@ -734,6 +736,10 @@ async fn main() {
         }
         if server_info.assigned_port != DEFAULT_PORT {
             query_strings.push(("bridge", format!("{}:{}", server_info.assigned_ip, server_info.assigned_port)));
+        }
+
+        if ignore_package_id {
+            query_strings.push(("ignore_package_id", "true".to_string()));
         }
 
         // Append query strings to the browser URL.
