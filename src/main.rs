@@ -730,7 +730,7 @@ async fn main() {
             query_strings.push(("dev", "true".to_string()));
         }
         if game_id != DEFAULT_GAME_ID {
-            query_strings.push(("game", url_encode(game_id)));
+            query_strings.push(("game_id", url_encode(game_id)));
         }
         if server_info.assigned_port != DEFAULT_PORT {
             query_strings.push(("bridge", format!("{}:{}", server_info.assigned_ip, server_info.assigned_port)));
