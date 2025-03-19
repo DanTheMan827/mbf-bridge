@@ -16,497 +16,77 @@
 //! For Windows and Linux, if ADB isn’t already running, the corresponding binary (and related DLLs on Windows)
 //! is extracted to a subfolder in the temporary directory. This subfolder is named using a randomly generated UUID.
 
-// ------------------------------
-// Constants
-// ------------------------------
-/// Default port for the local server.
-const DEFAULT_PORT: u16 = 25037;
+mod config;
+mod adb;
+mod utils;
+mod browser;
+mod server;
+mod server_info;
+mod console;
 
-/// Default URL for the MBF app.
-const DEFAULT_URL: &str = "https://dantheman827.github.io/ModsBeforeFriday/";
+use crate::adb::adb_connect_or_start;
+use crate::utils::extract_origin;
+use crate::server_info::ServerInfo;
+use browser::start_browser;
+use clap::{arg, command, CommandFactory, Parser};
+use config::{AUTO_START_ARG, DEFAULT_GAME_ID, DEFAULT_PORT, DEFAULT_PROXY, DEFAULT_URL};
+use server::router_instance::get_router_instance;
+use urlencoding::encode as url_encode;
 
-/// Default game ID for the MBF app.
-const DEFAULT_GAME_ID: &str = "com.beatgames.beatsaber";
-
-/// Argument to automatically start the server without a tray icon.
-const AUTO_START_ARG: &str = "--auto-start";
-
-// ------------------------------
-// Browser Paths
-// ------------------------------
-/// Path to the Microsoft Edge executable.
-static EDGE_PATH: OnceLock<Option<String>> = OnceLock::new();
-
-/// Path to the Google Chrome executable.
-static CHROME_PATH: OnceLock<Option<String>> = OnceLock::new();
-
-/// Path to the Google Chrome executable (alternative name).
-static GOOGLE_CHROME_PATH: OnceLock<Option<String>> = OnceLock::new();
-
-// ------------------------------
-// Global Variables
-// ------------------------------
-
-/// Global proxy host used for redirection.
-static PROXY_HOST: OnceLock<String> = OnceLock::new();
-
-/// Global HTTP client.
-static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-
-// ------------------------------
-// Imports
-// ------------------------------
 use auto_launch::AutoLaunchBuilder;
-use axum::{
-    extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
-        Request,
-    }, response::{IntoResponse, Response}, routing::get, serve::Serve, Router
-};
-use futures_util::{SinkExt, StreamExt};
-use http::{Method, StatusCode};
 use reqwest::Url;
 use single_instance::SingleInstance;
+
 use std::{
-    env,
-    path::Path,
-    process::{exit, Stdio},
-    sync::{Arc, Mutex, OnceLock},
-    time::{Duration, Instant},
+    env, io, process::exit, sync::{Arc, Mutex, OnceLock}, time::{Duration, Instant}
 };
 use tao::event_loop::EventLoopBuilder;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
-    process::Command,
-};
-use tower_http::cors::CorsLayer;
 use tray_icon::{
     menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
     TrayIcon, TrayIconBuilder, TrayIconEvent,
 };
-use uuid::Uuid;
 
-/// Starts the ADB server using the provided executable path.
-///
-/// This function spawns the ADB server with arguments `server nodaemon` and the environment variable
-/// `ADB_MDNS_OPENSCREEN` set to 1. It detaches stdout and stderr.
-///
-/// # Arguments
-///
-/// * `path` - Path to the ADB executable.
-///
-/// # Returns
-///
-/// A `tokio::io::Result<()>` indicating success or failure.
-async fn adb_start(path: &str) -> tokio::io::Result<()> {
-    let mut command = Command::new(path);
-    command.args(&["server", "nodaemon"]);
-    command.env("ADB_MDNS_OPENSCREEN", "1");
-    command.stdout(Stdio::null());
-    command.stderr(Stdio::null());
-    #[cfg(windows)]
-    command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None, disable_help_flag = true)]
+struct Args {
+    #[arg(long, default_value_t = DEFAULT_PORT)]
+    port: u16,
 
-    let mut process = command.spawn()?;
-    // Spawn a background task to wait for the process (avoid blocking)
-    tokio::spawn(async move {
-        let _ = process.wait().await;
-    });
-    Ok(())
-}
+    /// Automatically exit the bridge after 10 seconds of inactivity
+    #[arg[long, default_value_t = false]]
+    auto_close: bool,
 
-/// Connects to the ADB server.
-///
-/// # Returns
-///
-/// A `tokio::io::Result<TcpStream>` representing the connection to the ADB server.
-async fn adb_connect() -> tokio::io::Result<TcpStream> {
-    TcpStream::connect("127.0.0.1:5037").await
-}
+    /// Specify a custom URL for the MBF app (always true on macOS)
+    #[arg[long, default_value_t = DEFAULT_URL.to_owned()]]
+    url: String,
 
-/// Retries the connection to the ADB server up to 10 times with short delays.
-///
-/// # Returns
-///
-/// A `tokio::io::Result<TcpStream>` representing the successful connection or an error.
-async fn adb_connect_retry() -> tokio::io::Result<TcpStream> {
-    let mut attempts = 0;
-    loop {
-        match adb_connect().await {
-            Ok(stream) => return Ok(stream),
-            Err(err) => {
-                if attempts == 10 {
-                    return Err(err);
-                }
-                attempts += 1;
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
-        }
-    }
-}
+    /// Proxy requests through the internal server to avoid mixed content errors
+    #[arg[long, default_value_t = DEFAULT_PROXY]]
+    proxy: bool,
 
-/// Extracts ADB binaries for Windows into a temporary subfolder and returns the path to the ADB executable.
-///
-/// The subfolder is named with a randomly generated UUID (using v4 as a placeholder for v7).
-#[cfg(windows)]
-async fn extract_adb_binaries_windows() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-    use tokio::fs::{create_dir_all, write};
+    /// Allocate a console window to display logs
+    #[arg[long, default_value_t = false, hide = cfg!(not(windows))]]
+    console: bool,
 
-    let temp_dir = env::temp_dir();
-    let adb_subfolder = temp_dir.join(Uuid::new_v4().to_string());
-    create_dir_all(&adb_subfolder).await?;
+    /// Print help
+    #[arg[long, short]]
+    help: bool,
 
-    let adb_path = adb_subfolder.join("adb.exe");
-    write(&adb_path, include_bytes!("../adb/win/adb.exe")).await?;
-    write(
-        adb_subfolder.join("AdbWinApi.dll"),
-        include_bytes!("../adb/win/AdbWinApi.dll"),
-    )
-    .await?;
-    write(
-        adb_subfolder.join("AdbWinUsbApi.dll"),
-        include_bytes!("../adb/win/AdbWinUsbApi.dll"),
-    )
-    .await?;
-    Ok(adb_path)
-}
+    /// Start the server without automatically opening the browser
+    #[arg(long = AUTO_START_ARG.strip_prefix("--"), hide = false)]
+    no_browser: bool,
 
-/// Extracts ADB binaries for Linux into a temporary subfolder and returns the path to the ADB executable.
-///
-/// The subfolder is named with a randomly generated UUID (using v4 as a placeholder for v7).
-#[cfg(target_os = "linux")]
-async fn extract_adb_binaries_linux() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-    use tokio::fs::{create_dir_all, write};
+    /// Enable MBF development mode
+    #[arg[long = "dev", default_value_t = false, help_heading = "Development Options"]]
+    dev_mode: bool,
 
-    let temp_dir = env::temp_dir();
-    let adb_subfolder = temp_dir.join(Uuid::new_v4().to_string());
-    create_dir_all(&adb_subfolder).await?;
+    /// Specify a custom game ID for the MBF app
+    #[arg[long, default_value_t = DEFAULT_GAME_ID.to_owned(), help_heading = "Development Options"]]
+    game_id: String,
 
-    let adb_path = adb_subfolder.join("adb");
-    write(&adb_path, include_bytes!("../adb/linux/adb")).await?;
-    // Set executable permissions
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&adb_path, std::fs::Permissions::from_mode(0o755))?;
-    Ok(adb_path)
-}
-
-/// Ensures a connection to the ADB server, starting it if necessary.
-///
-/// On Windows and Linux, if ADB is not running, the binaries are extracted into a temporary
-/// subfolder (named with a random UUID) and then started.
-///
-/// # Returns
-///
-/// A `tokio::io::Result<TcpStream>` representing the ADB connection.
-async fn adb_connect_or_start() -> tokio::io::Result<TcpStream> {
-    // Try to connect first.
-    if let Ok(stream) = adb_connect().await {
-        return Ok(stream);
-    }
-
-    // Attempt to start ADB normally using system-installed "adb".
-    if adb_start("adb").await.is_ok() {
-        return adb_connect_retry().await;
-    }
-
-    // Fallback extraction logic depending on the operating system.
-    #[cfg(windows)]
-    {
-        let adb_path = extract_adb_binaries_windows().await.unwrap();
-        adb_start(adb_path.to_str().unwrap()).await.unwrap();
-        adb_connect_retry().await
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let adb_path = extract_adb_binaries_linux().await.unwrap();
-        adb_start(adb_path.to_str().unwrap()).await.unwrap();
-        adb_connect_retry().await
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        // On macOS, assume ADB is located alongside the executable.
-        let adb_exe = env::current_exe().unwrap().parent().unwrap().join("adb");
-        adb_start(adb_exe.to_str().unwrap()).await.unwrap();
-        adb_connect_retry().await
-    }
-}
-
-/// Attempts to locate an executable by checking direct paths, the PATH variable,
-/// and the App Paths registry on Windows.
-fn locate_executable(command: &str) -> Option<String> {
-    // Step 1: If the command is a direct path, check if it exists.
-    let command_path = Path::new(command);
-    if command_path.exists() && command_path.is_file() {
-        return Some(command_path.to_string_lossy().to_string());
-    }
-
-    // If the command doesn't have an extension, consider adding ".exe"
-    let candidate_names: Vec<String> = if Path::new(command).extension().is_none() {
-        vec![command.to_string(), format!("{}.exe", command)]
-    } else {
-        vec![command.to_string()]
-    };
-
-    // Step 2: Look through each directory in the PATH environment variable.
-    if let Ok(paths) = env::var("PATH") {
-        for path in env::split_paths(&paths) {
-            for candidate in &candidate_names {
-                let full_path = path.join(candidate);
-                if full_path.exists() && full_path.is_file() {
-                    return Some(full_path.to_string_lossy().to_string());
-                }
-            }
-        }
-    }
-
-    // Step 3: Check the App Paths registry (Windows-specific)
-    #[cfg(windows)]
-    {
-        use std::path::PathBuf;
-        use winreg::enums::*;
-        use winreg::RegKey;
-
-        // Open the registry key for App Paths.
-        let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-        if let Ok(app_paths) =
-            hklm.open_subkey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths")
-        {
-            for candidate in &candidate_names {
-                if let Ok(subkey) = app_paths.open_subkey(candidate) {
-                    // The default value usually contains the full path to the executable.
-                    if let Ok(path_str) = subkey.get_value::<String, _>("") {
-                        let candidate_path = PathBuf::from(path_str);
-                        if candidate_path.exists() && candidate_path.is_file() {
-                            return Some(candidate_path.to_string_lossy().to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // No method succeeded, so return None.
-    None
-}
-
-/// Attempts to start a chromium-based browser in app mode with the specified URL.
-fn start_chromium_app(binary: &Option<String>, url: &str) -> bool {
-    if let Some(executable) = binary {
-        // Launch the chromium-based browse in app mode with our url.
-        let mut command = Command::new(executable);
-        command.args(&["--new-window", format!("--app={}", url).as_str()]);
-
-        tokio::spawn(async move { command.spawn() });
-
-        return true;
-    }
-
-    return false;
-}
-
-/// Opens the default browser with the specified URL.
-///
-/// # Arguments
-///
-/// * `url` - The URL to open.
-fn start_browser(url: &Arc<String>) -> tokio::task::JoinHandle<()> {
-    let url = Arc::clone(&url);
-
-    tokio::spawn(async move {
-        if start_chromium_app(
-            EDGE_PATH.get_or_init(|| locate_executable("msedge")),
-            url.as_ref(),
-        ) {
-            return;
-        }
-
-        if start_chromium_app(
-            CHROME_PATH.get_or_init(|| locate_executable("chrome")),
-            url.as_ref(),
-        ) {
-            return;
-        }
-
-        if start_chromium_app(
-            GOOGLE_CHROME_PATH.get_or_init(|| locate_executable("google-chrome")),
-            url.as_ref(),
-        ) {
-            return;
-        }
-
-        open::that_detached(url.as_ref()).unwrap();
-    })
-}
-
-/// Handles incoming websocket connections and proxies data to/from the ADB server.
-async fn handle_websocket(ws: WebSocket) {
-    let (mut ws_writer, mut ws_reader) = ws.split();
-
-    // Connect to (or start) ADB and split the connection.
-    let (mut adb_reader, mut adb_writer) = adb_connect_or_start().await.unwrap().into_split();
-
-    // Run both directions concurrently.
-    tokio::join!(
-        async {
-            // Forward binary messages from the websocket to ADB.
-            while let Some(Ok(message)) = ws_reader.next().await {
-                if let Message::Binary(packet) = message {
-                    adb_writer.write_all(&packet).await.unwrap();
-                }
-            }
-            adb_writer.shutdown().await.unwrap();
-        },
-        async {
-            // Read data from ADB and send as binary messages over the websocket.
-            let mut buf = vec![0; 1024 * 1024];
-            loop {
-                match adb_reader.read(&mut buf).await {
-                    Ok(0) | Err(_) => {
-                        ws_writer.close().await.unwrap();
-                        break;
-                    }
-                    Ok(n) => {
-                        ws_writer
-                            .send(Message::binary(buf[..n].to_vec()))
-                            .await
-                            .unwrap();
-                    }
-                }
-            }
-        }
-    );
-}
-
-/// Handles proxying of HTTP requests to the configured proxy host.
-///
-/// This function takes an incoming HTTP request, modifies it to include the appropriate
-/// headers and target URL, and forwards it to the configured proxy host. The response
-/// from the proxy host is then returned to the client.
-///
-/// # Arguments
-///
-/// * `request` - The incoming HTTP request to be proxied.
-///
-/// # Returns
-///
-/// A `Result<Response, Response>` where:
-/// - `Ok(Response)` contains the successful response from the proxy host.
-/// - `Err(Response)` contains an error response if the request could not be processed.
-///
-/// # Behavior
-///
-/// - The function reads the global `PROXY_HOST` to determine the base URL for the proxy.
-/// - It modifies the incoming request's headers to include the `Host` header of the proxy host.
-/// - The request body is wrapped as a stream and forwarded to the proxy host.
-/// - If the request fails to parse or the proxy host is unreachable, appropriate HTTP error
-///   responses are returned (`400 Bad Request` or `502 Bad Gateway`).
-///
-/// # Errors
-///
-/// - Returns `400 Bad Request` if the request URI cannot be parsed.
-/// - Returns `502 Bad Gateway` if the proxy host is unreachable.
-#[axum::debug_handler]
-async fn proxy_request(request: Request) -> Result<Response, Response> {
-    println!("proxy_request: {} {}", request.method(), request.uri());
-
-    let url = Url::options()
-        .base_url(Some(&Url::parse(PROXY_HOST.get().unwrap()).unwrap()))
-        .parse(&request.uri().to_string())
-        .map_err(|_| (StatusCode::BAD_REQUEST, "Bad Request").into_response())?;
-
-    let mut headers = request.headers().clone();
-    headers.insert("Host", url.host_str().unwrap().parse().unwrap());
-
-    let (client, request) = CLIENT
-        .get_or_init(|| reqwest::Client::new())
-        .request(request.method().clone(), url)
-        .headers(headers)
-        .body(reqwest::Body::wrap_stream(
-            request.into_body().into_data_stream(),
-        ))
-        .build_split();
-
-    let request = request.map_err(|_| (StatusCode::BAD_REQUEST, "Bad Request").into_response())?;
-
-    let response = client
-        .execute(request)
-        .await
-        .map_err(|_| (StatusCode::BAD_GATEWAY, "Bad Gateway").into_response())?;
-
-    Ok((
-        response.status(),
-        response.headers().clone(),
-        axum::body::Body::new(reqwest::Body::from(response)),
-    )
-        .into_response())
-}
-
-/// URL encodes a string.
-fn url_encode(input: &str) -> String {
-    let mut output = String::new();
-    for byte in input.bytes() {
-        match byte {
-            // Alphanumeric and safe characters
-            0x30..=0x39 | 0x41..=0x5A | 0x61..=0x7A | 0x2D | 0x2E | 0x5F | 0x7E => {
-                output.push(byte as char)
-            }
-            _ => {
-                output.push('%');
-                output.push_str(&format!("{:02X}", byte));
-            }
-        }
-    }
-    output
-}
-
-/// Extracts the origin (scheme and host) from a given URL string.
-///
-/// Returns `Some(String)` if successful, otherwise `None`.
-fn extract_origin(app_url: &str) -> Option<String> {
-    let url_parts: Vec<&str> = app_url.split("//").collect();
-    if url_parts.len() == 2 {
-        let scheme = url_parts[0]; // e.g. "http:" or "https:"
-        let host_and_port = url_parts[1].split('/').next()?; // Extract host and port
-        return Some(format!("{}//{}", scheme, host_and_port));
-    }
-    None
-}
-
-struct ServerInfo {
-    listener: Option<TcpListener>,
-    assigned_ip: String,
-    assigned_port: u16,
-    assigned_url: String,
-}
-
-impl ServerInfo {
-    async fn new(create_listener: bool, assigned_ip: String, assigned_port: Option<u16>) -> Self {
-        let assigned_port = assigned_port.unwrap_or(0);
-        let listener: Option<TcpListener> = if create_listener {
-            Some(TcpListener::bind(format!("{}:{}", assigned_ip, assigned_port)).await.unwrap())
-        } else {
-            None
-        };
-
-        let assigned_url:String = if let Some(ref listener) = listener {
-            let local_addr = listener.local_addr().unwrap();
-            let assigned_port = local_addr.port();
-
-            format!("http://{}:{}", assigned_ip, assigned_port)
-        } else {
-            format!("http://{}:{}", assigned_ip, assigned_port)
-        };
-
-        Self {
-            listener: listener,
-            assigned_ip,
-            assigned_port,
-            assigned_url,
-        }
-    }
+    /// Ignore the package ID check during qmod installation
+    #[arg[long, default_value_t = false, help_heading = "Development Options"]]
+    ignore_package_id: bool,
 }
 
 /// Entry point of the application.
@@ -515,111 +95,45 @@ async fn main() {
     // ------------------------------
     // Configuration and Command-Line Parsing
     // ------------------------------
-    let args: Vec<String> = env::args().collect();
-    let launch_args: Vec<String> = args
-        .iter()
+    let launch_args: Vec<String> = env::args().into_iter()
         .skip(1)
-        .filter(|item| **item != AUTO_START_ARG)
-        .cloned()
+        .filter(|item| **item != config::AUTO_START_ARG.to_owned())
         .collect();
 
-    let mut port = DEFAULT_PORT;
-    let run_persistent = !args.contains(&"--auto-close".to_string());
-    let mut app_url = DEFAULT_URL;
-    let dev_mode = args.contains(&"--dev".to_string());
-    let ignore_package_id = args.contains(&"--ignore-package-id".to_string());
-    let mut game_id = DEFAULT_GAME_ID;
-    let mut open_browser = !args.contains(&AUTO_START_ARG.to_string());
+    let args = Args::parse();
 
-    #[cfg(not(target_os = "macos"))]
-    let proxy_requests = args.contains(&"--proxy".to_string());
+    let mut port = args.port;
+    let run_persistent = !args.auto_close;
+    let app_url = args.url.as_str();
+    let dev_mode = args.dev_mode;
+    let ignore_package_id = args.ignore_package_id;
+    let game_id = args.game_id.as_str();
+    let mut open_browser = !args.no_browser;
+    let proxy_requests = args.proxy;
 
-    #[cfg(target_os = "macos")]
-    let mut proxy_requests = args.contains(&"--proxy".to_string());
+    // Allocate a console window if requested or needed.
+    #[cfg(windows)]
+    let allocated_console = (args.console || args.help) && console::allocate_console();
 
     // Display help message if requested.
-    if args.contains(&"--help".to_string()) {
-        let help_message = [
-            format!(
-                "Usage: {} [OPTIONS]",
-                env::current_exe()
-                    .unwrap()
-                    .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-            )
-            .as_str(),
-            "",
-            "Options:",
-            "  --help                Show this help message",
-            format!("  --port <PORT>         Specify a custom port for the server (default: {}, or 0 if not persistent)", DEFAULT_PORT).as_str(),
-            "  --auto-close          Automatically exit the bridge after 10 seconds of inactivity",
-            format!("  --url <URL>           Specify a custom URL for the MBF app (default: {})", DEFAULT_URL).as_str(),
-            #[cfg(not(target_os = "macos"))]
-            "  --proxy               Proxy requests through the internal server to avoid mixed content errors",
-            #[cfg(windows)]
-            "  --console             Allocate a console window to display logs",
-            "",
-            "Development Options:",
-            "  --dev                 Enable MBF development mode",
-            "  --game-id <ID>        Specify a custom game ID for the MBF app (default: com.beatgames.beatsaber)",
-            "  --ignore-package-id   Ignore the package ID check during qmod installation",
-            "",
-            "Behavior:",
-            "  If --auto-close is specified:",
-            "    - The server will shut down after 10 seconds of inactivity.",
-            "    - The server will use a random port (--port 0 is implied).",
-        ]
-        .join("\n");
+    if args.help {
+        let help_message = {
+            let mut help_message = "";
+            let mut cmd = Args::command();
+            cmd.render_help().to_string()
+        };
 
-        #[cfg(not(windows))]
-        {
-            println!("{}", help_message);
-        }
+        println!("{}", help_message);
 
         #[cfg(windows)]
         {
-            use std::ptr::null_mut;
-            use winapi::shared::ntdef::LPCWSTR;
-            use winapi::um::winuser::{MessageBoxW, MB_ICONINFORMATION, MB_OK};
-
-            // Convert Rust string to a wide string (UTF-16)
-            let wide_message: Vec<u16> = help_message.encode_utf16().chain(Some(0)).collect();
-            let wide_title: Vec<u16> = "Help".encode_utf16().chain(Some(0)).collect();
-            unsafe {
-                MessageBoxW(
-                    null_mut(),
-                    wide_message.as_ptr() as LPCWSTR,
-                    wide_title.as_ptr() as LPCWSTR,
-                    MB_OK | MB_ICONINFORMATION,
-                );
+            if allocated_console {
+                println!("Press Enter to exit...");
+                let _ = io::stdin().read_line(&mut String::new());
             }
         }
+
         return;
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        proxy_requests = true; // Always proxy on macOS to avoid mixed content errors
-    }
-
-    // Parse custom URL, port, and game ID arguments.
-    if let Some(url_index) = args.iter().position(|x| x == "--url") {
-        if let Some(url_str) = args.get(url_index + 1) {
-            app_url = url_str;
-        }
-    }
-    if let Some(port_index) = args.iter().position(|x| x == "--port") {
-        if let Some(port_str) = args.get(port_index + 1) {
-            if let Ok(port_num) = port_str.parse::<u16>() {
-                port = port_num;
-            }
-        }
-    }
-    if let Some(game_index) = args.iter().position(|x| x == "--game-id") {
-        if let Some(game_str) = args.get(game_index + 1) {
-            game_id = game_str;
-        }
     }
 
     // If running in auto-close mode, force browser open and use a random port.
@@ -649,17 +163,7 @@ async fn main() {
     // Web Server Setup using Axum
     // ------------------------------
     // Track the time of the last request for auto-close.
-    let last_request_time = Arc::new(Mutex::new(Instant::now()));
-    let update_last_request_time = {
-        let last_request_time = Arc::clone(&last_request_time);
-        move |req: Request, next: axum::middleware::Next| {
-            let last_request_time = Arc::clone(&last_request_time);
-            async move {
-                *last_request_time.lock().unwrap() = Instant::now();
-                next.run(req).await
-            }
-        }
-    };
+
 
     // Determine allowed origins for CORS.
     let app_origin = extract_origin(app_url).unwrap();
@@ -678,31 +182,6 @@ async fn main() {
     };
 
     println!("Allowed Origins: {:?}", allowed_origins);
-
-    // Define the Axum router and nested routes.
-    let app = Router::new()
-        .nest(
-            "/bridge",
-            Router::new()
-                .route("/ping", get(|| async { "OK" }))
-                .route(
-                    "/",
-                    get(|ws: WebSocketUpgrade| async { ws.on_upgrade(handle_websocket) }),
-                )
-                .route_layer(
-                    CorsLayer::new()
-                        .allow_methods([Method::GET, Method::POST])
-                        .allow_origin(
-                            allowed_origins
-                                .iter()
-                                .map(|x| x.parse().unwrap())
-                                .collect::<Vec<_>>(),
-                        )
-                        .allow_private_network(true),
-                ),
-        )
-        .fallback(proxy_request)
-        .layer(axum::middleware::from_fn(update_last_request_time));
 
     // ------------------------------
     // Single Instance Check
@@ -731,10 +210,10 @@ async fn main() {
         if dev_mode {
             query_strings.push(("dev", "true".to_string()));
         }
-        if game_id != DEFAULT_GAME_ID {
-            query_strings.push(("game_id", url_encode(game_id)));
+        if game_id != config::DEFAULT_GAME_ID {
+            query_strings.push(("game_id", url_encode(game_id).into_owned()));
         }
-        if server_info.assigned_port != DEFAULT_PORT {
+        if server_info.assigned_port != config::DEFAULT_PORT {
             query_strings.push(("bridge", format!("{}:{}", server_info.assigned_ip, server_info.assigned_port)));
         }
 
@@ -748,7 +227,7 @@ async fn main() {
             for (key, value) in query_strings {
                 browser_url.push_str(key);
                 browser_url.push('=');
-                browser_url.push_str(&url_encode(&value));
+                browser_url.push_str(&url_encode(&value).to_owned());
                 browser_url.push('&');
             }
             browser_url.pop(); // Remove trailing '&'
@@ -757,8 +236,10 @@ async fn main() {
         browser_url
     };
 
+    // Setup the router instance.
+    let (app, last_request_time) = get_router_instance(allowed_origins, app_url.to_string());
+
     // Set the global proxy host.
-    let _ = PROXY_HOST.set(app_url.to_string());
     println!("Server is running: {}", server_info.assigned_url);
     println!("Browser URL: {}", browser_url);
 
@@ -899,7 +380,7 @@ async fn main() {
     let auto_launch = {
         // Clone the launch arguments and add the auto-close flag.
         let mut auto_launch_args = launch_args.clone();
-        auto_launch_args.push(AUTO_START_ARG.to_string());
+        auto_launch_args.push(config::AUTO_START_ARG.to_string());
 
         // Create the auto-launch configuration.
         AutoLaunchBuilder::new()
