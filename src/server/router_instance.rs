@@ -1,10 +1,10 @@
-use axum::{extract::WebSocketUpgrade, middleware, routing::get, Router};
+use axum::{extract::WebSocketUpgrade, routing::get, Router};
 use http::Method;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 type Request = axum::http::Request<axum::body::Body>;
 use tower_http::cors::CorsLayer;
-use super::proxy_request_handler::{self, ProxyRequestHandler};
+use super::proxy_request_handler::ProxyRequestHandler;
 use super::handle_websocket;
 
 pub fn get_router_instance(allowed_origins: Vec<&str>, proxy_host: String) -> (Router, Arc<std::sync::Mutex<std::time::Instant>>) {

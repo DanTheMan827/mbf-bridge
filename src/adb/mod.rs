@@ -1,7 +1,5 @@
 use std::{env, time::Duration};
-use tokio::fs::{create_dir_all, write};
 use tokio::net::TcpStream;
-use uuid::Uuid;
 
 /// Starts the ADB server using the provided executable path.
 ///
@@ -70,6 +68,9 @@ pub async fn adb_connect_retry() -> tokio::io::Result<TcpStream> {
 /// The subfolder is named with a randomly generated UUID (using v4 as a placeholder for v7).
 #[cfg(windows)]
 pub async fn extract_adb_binaries_windows() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    use tokio::fs::{create_dir_all, write};
+    use uuid::Uuid;
+
     let temp_dir = env::temp_dir();
     let adb_subfolder = temp_dir.join(Uuid::new_v4().to_string());
     create_dir_all(&adb_subfolder).await?;

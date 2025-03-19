@@ -26,15 +26,6 @@ impl ProxyRequestHandler {
             http_client: reqwest::Client::new()
         }
     }
-
-    /// Returns the configured proxy host.
-    ///
-    /// # Returns
-    ///
-    /// A reference to the proxy host string.
-    pub fn host(&self) -> &str {
-        &self.host
-    }
 }
 
 impl ProxyRequestHandler {

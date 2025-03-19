@@ -1,16 +1,9 @@
 pub mod proxy_request_handler;
 pub mod router_instance;
 
-use std::{future::Future, pin::Pin, sync::OnceLock};
-
 use crate::adb::adb_connect_or_start;
-use axum::{
-    extract::{
-        ws::{Message, WebSocket}, Request
-    }, response::{IntoResponse, Response}
-};
+use axum::extract::ws::{Message, WebSocket};
 use futures_util::{SinkExt, StreamExt};
-use reqwest::{Url, StatusCode};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// Handles incoming websocket connections and proxies data to/from the ADB server.

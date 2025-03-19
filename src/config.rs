@@ -6,14 +6,7 @@ pub const DEFAULT_URL: &str = "https://dantheman827.github.io/ModsBeforeFriday/"
 /// Default game ID for the MBF app.
 pub const DEFAULT_GAME_ID: &str = "com.beatgames.beatsaber";
 
-pub const DEFAULT_PROXY: bool = {
-    #[cfg(target_os = "macos")]
-    {
-        true
-    }
-
-    false
-};
+pub const DEFAULT_PROXY: bool = cfg!(target_os = "macos");
 
 /// Argument to automatically start the server without a tray icon.
 pub const AUTO_START_ARG: &str = "--no-browser";

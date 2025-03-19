@@ -38,13 +38,15 @@ use reqwest::Url;
 use single_instance::SingleInstance;
 
 use std::{
-    env, io, process::exit, sync::{Arc, Mutex, OnceLock}, time::{Duration, Instant}
+    env, process::exit, sync::{Arc, Mutex, OnceLock}, time::{Duration, Instant}
 };
 use tao::event_loop::EventLoopBuilder;
 use tray_icon::{
     menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
-    TrayIcon, TrayIconBuilder, TrayIconEvent,
+    TrayIcon, TrayIconBuilder,
 };
+#[cfg(not(target_os = "macos"))]
+use tray_icon::TrayIconEvent;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None, disable_help_flag = true)]
@@ -122,7 +124,6 @@ async fn main() {
     // Display help message if requested.
     if args.help {
         let help_message = {
-            let mut help_message = "";
             let mut cmd = Args::command();
             cmd.render_help().to_string()
         };
@@ -131,6 +132,7 @@ async fn main() {
 
         #[cfg(windows)]
         {
+            use std::io;
             if allocated_console {
                 println!("Press Enter to exit...");
                 let _ = io::stdin().read_line(&mut String::new());
