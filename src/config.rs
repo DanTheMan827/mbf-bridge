@@ -1,3 +1,7 @@
+/// Default IP for the server.
+pub const DEFAULT_IP: &str = "127.0.0.1";
+
+/// Default port for the server.
 pub const DEFAULT_PORT: u16 = 25037;
 
 /// Default URL for the MBF app.

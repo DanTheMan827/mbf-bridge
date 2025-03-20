@@ -93,6 +93,10 @@ struct Args {
     /// Additional HTTP origins to allow for CORS
     #[arg[long = "origin", name = "ORIGIN", help_heading = "Development Options"]]
     additional_origins: Vec<String>,
+
+    /// The IP address to bind the server to
+    #[arg[long, default_value = DEFAULT_IP, help_heading = "Development Options"]]
+    bind_ip: String,
 }
 
 /// Entry point of the application.
@@ -203,7 +207,7 @@ async fn main() {
     let instance = SingleInstance::new(app_title).unwrap();
 
     // Bind the server listener.
-    let server_info = ServerInfo::new(instance.is_single(), "127.0.0.1".to_string(), Some(port)).await;
+    let server_info = ServerInfo::new(single_instance, args.bind_ip.to_string(), Some(port)).await;
 
     // Assign the browser URL with query parameters.
     let browser_url = {
@@ -227,7 +231,7 @@ async fn main() {
         if game_id != config::DEFAULT_GAME_ID {
             query_strings.push(("game_id", url_encode(game_id).into_owned()));
         }
-        if server_info.assigned_port != config::DEFAULT_PORT {
+        if server_info.assigned_port != config::DEFAULT_PORT || server_info.assigned_ip != config::DEFAULT_IP {
             query_strings.push(("bridge", format!("{}:{}", server_info.assigned_ip, server_info.assigned_port)));
         }
 
