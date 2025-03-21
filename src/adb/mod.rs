@@ -100,6 +100,7 @@ pub async fn extract_adb_binaries_windows() -> Result<std::path::PathBuf, Box<dy
 #[cfg(target_os = "linux")]
 pub async fn extract_adb_binaries_linux() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     use tokio::fs::{create_dir_all, write};
+    use uuid::Uuid;
 
     let temp_dir = env::temp_dir();
     let adb_subfolder = temp_dir.join(Uuid::new_v4().to_string());
