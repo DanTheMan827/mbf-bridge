@@ -76,12 +76,12 @@ struct Args {
     #[arg[long, default_value_t = false]]
     auto_close: bool,
 
-    /// Specify a custom URL for the MBF app (always true on macOS)
+    /// Specify a custom URL for the MBF app
     #[arg[long, default_value_t = DEFAULT_URL.to_owned()]]
     url: String,
 
     /// Proxy requests through the internal server to avoid mixed content errors
-    #[arg[long, default_value_t = DEFAULT_PROXY]]
+    #[arg[long, default_value_t = DEFAULT_PROXY, hide = cfg!(target_os = "macos")]]
     proxy: bool,
 
     /// Allocate a console window to display logs
