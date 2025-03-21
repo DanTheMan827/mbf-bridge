@@ -1,4 +1,8 @@
-use std::{env, time::Duration};
+use std::time::Duration;
+
+#[cfg(not(target_os = "android"))]
+use std::env;
+
 use tokio::net::TcpStream;
 
 /// Starts the ADB server using the provided executable path.
@@ -133,14 +137,14 @@ pub async fn adb_connect_or_start() -> tokio::io::Result<TcpStream> {
     {
         let adb_path = extract_adb_binaries_windows().await.unwrap();
         adb_start(adb_path.to_str().unwrap()).await.unwrap();
-        adb_connect_retry().await
+        return adb_connect_retry().await;
     }
 
     #[cfg(target_os = "linux")]
     {
         let adb_path = extract_adb_binaries_linux().await.unwrap();
         adb_start(adb_path.to_str().unwrap()).await.unwrap();
-        adb_connect_retry().await
+        return adb_connect_retry().await;
     }
 
     #[cfg(target_os = "macos")]
@@ -148,6 +152,11 @@ pub async fn adb_connect_or_start() -> tokio::io::Result<TcpStream> {
         // On macOS, assume ADB is located alongside the executable.
         let adb_exe = env::current_exe().unwrap().parent().unwrap().join("adb");
         adb_start(adb_exe.to_str().unwrap()).await.unwrap();
-        adb_connect_retry().await
+        return adb_connect_retry().await;
     }
+
+    return Err(std::io::Error::new(
+        std::io::ErrorKind::Other,
+        "ADB connection failed",
+    ));
 }

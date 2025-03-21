@@ -29,22 +29,40 @@ use crate::utils::extract_origin;
 use crate::server_info::ServerInfo;
 use browser::start_browser;
 use clap::{arg, command, CommandFactory, Parser};
-use config::{AUTO_START_ARG, DEFAULT_GAME_ID, DEFAULT_PORT, DEFAULT_PROXY, DEFAULT_URL};
+use config::{AUTO_START_ARG, DEFAULT_GAME_ID, DEFAULT_IP, DEFAULT_PORT, DEFAULT_PROXY, DEFAULT_URL};
 use server::router_instance::get_router_instance;
 use urlencoding::encode as url_encode;
 
+#[cfg(not(target_os = "android"))]
 use auto_launch::AutoLaunchBuilder;
+
 use reqwest::Url;
+
+#[cfg(not(target_os = "android"))]
 use single_instance::SingleInstance;
 
 use std::{
-    env, process::exit, sync::{Arc, Mutex, OnceLock}, time::{Duration, Instant}
+    process::exit, sync::{Arc, Mutex}, time::Duration
 };
+
+#[cfg(not(target_os = "android"))]
+use std::{
+    sync::OnceLock, time::Instant
+};
+
+#[cfg(not(target_os = "android"))]
+use std::env;
+
+#[cfg(not(target_os = "android"))]
 use tao::event_loop::EventLoopBuilder;
+
+#[cfg(not(target_os = "android"))]
 use tray_icon::{
     menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
     TrayIcon, TrayIconBuilder,
 };
+
+#[cfg(not(target_os = "android"))]
 #[cfg(not(target_os = "macos"))]
 use tray_icon::TrayIconEvent;
 
@@ -75,7 +93,7 @@ struct Args {
     help: bool,
 
     /// Start the server without automatically opening the browser
-    #[arg(long = AUTO_START_ARG.strip_prefix("--"), hide = false)]
+    #[arg(long = AUTO_START_ARG.strip_prefix("--"), hide = cfg!(target_os = "android"), default_value_t = cfg!(target_os = "android"))]
     no_browser: bool,
 
     /// Enable MBF development mode
@@ -105,6 +123,7 @@ async fn main() {
     // ------------------------------
     // Configuration and Command-Line Parsing
     // ------------------------------
+    #[cfg(not(target_os = "android"))]
     let launch_args: Vec<String> = env::args().into_iter()
         .skip(1)
         .filter(|item| **item != config::AUTO_START_ARG.to_owned())
@@ -127,12 +146,8 @@ async fn main() {
 
     // Display help message if requested.
     if args.help {
-        let help_message = {
-            let mut cmd = Args::command();
-            cmd.render_help().to_string()
-        };
-
-        println!("{}", help_message);
+        let mut cmd = Args::command();
+        let _ = cmd.print_help();
 
         #[cfg(windows)]
         {
@@ -155,6 +170,7 @@ async fn main() {
     // ------------------------------
     // App Title
     // ------------------------------
+    #[cfg(not(target_os = "android"))]
     let app_title: &str = if launch_args.len() > 0 {
         Box::leak(format!("ModsBeforeFriday Bridge {:?}", launch_args).into_boxed_str())
     } else {
@@ -204,7 +220,11 @@ async fn main() {
     // ------------------------------
     // Single Instance Check
     // ------------------------------
-    let instance = SingleInstance::new(app_title).unwrap();
+    #[cfg(not(target_os = "android"))]
+    let single_instance = SingleInstance::new(app_title).unwrap().is_single();
+
+    #[cfg(target_os = "android")]
+    let single_instance = true;
 
     // Bind the server listener.
     let server_info = ServerInfo::new(single_instance, args.bind_ip.to_string(), Some(port)).await;
@@ -232,7 +252,11 @@ async fn main() {
             query_strings.push(("game_id", url_encode(game_id).into_owned()));
         }
         if server_info.assigned_port != config::DEFAULT_PORT || server_info.assigned_ip != config::DEFAULT_IP {
-            query_strings.push(("bridge", format!("{}:{}", server_info.assigned_ip, server_info.assigned_port)));
+            if proxy_requests {
+                query_strings.push(("bridge", "".to_owned()));
+            } else {
+                query_strings.push(("bridge", format!("{}:{}", server_info.assigned_ip, server_info.assigned_port)));
+            }
         }
 
         if ignore_package_id {
@@ -263,7 +287,7 @@ async fn main() {
 
     let browser_url = Arc::new(browser_url);
 
-    if !instance.is_single() && port > 0 {
+    if !single_instance && port > 0 {
         let _ = start_browser(&browser_url).await;
 
         return;
@@ -374,6 +398,7 @@ async fn main() {
     // System Tray and Event Loop
     // ------------------------------
     #[allow(unused_mut)]
+    #[cfg(not(target_os = "android"))]
     let mut event_loop = EventLoopBuilder::new().build();
 
     #[cfg(target_os = "macos")]
@@ -384,146 +409,159 @@ async fn main() {
         event_loop.set_activation_policy(tao::platform::macos::ActivationPolicy::Accessory);
     }
 
-    if !run_persistent.as_ref() {
-        event_loop.run(move |_, _, control_flow| {
-            *control_flow =
-                tao::event_loop::ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(16));
-        });
-    }
-
-    // Create the open menu item.
-    let menu_open = MenuItem::new("Open", true, None);
-
-    // Create the auto-launch configuration.
-    let auto_launch = {
-        // Clone the launch arguments and add the auto-close flag.
-        let mut auto_launch_args = launch_args.clone();
-        auto_launch_args.push(config::AUTO_START_ARG.to_string());
-
-        // Create the auto-launch configuration.
-        AutoLaunchBuilder::new()
-            .set_app_name(app_title)
-            .set_app_path(env::current_exe().unwrap().to_str().unwrap())
-            .set_args(&auto_launch_args)
-            .set_use_launch_agent(true)
-            .build()
-            .unwrap()
-    };
-
-    // Create the auto-run menu item.
-    let menu_auto_run = CheckMenuItem::new(
-        "Run at startup",
-        true,
-        auto_launch.is_enabled().unwrap(),
-        None,
-    );
-
-    // Create the quit menu item.
-    let menu_quit = MenuItem::new("Quit", true, None);
-
-    // Create the tray menu.
-    let tray_menu = Menu::new();
-    tray_menu
-        .append_items(&[
-            &menu_open,
-            &menu_auto_run,
-            &PredefinedMenuItem::separator(),
-            &menu_quit,
-        ])
-        .unwrap();
-
-    // Create the event receivers.
-    let menu_receiver = MenuEvent::receiver();
-
-    // Create the tray icon event receiver.
-    #[cfg(windows)]
-    let tray_receiver = TrayIconEvent::receiver();
-
-    // Create the tray icon.
-    let tray_icon: OnceLock<Option<TrayIcon>> = OnceLock::new();
-
-    println!("Starting event loop");
-    event_loop.run(move |event, _, control_flow| {
-        *control_flow =
-            tao::event_loop::ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(16));
-
-        if let tao::event::Event::Reopen { .. } = event {
-            start_browser(&browser_url);
-            return;
-        }
-
-        // Handle initialization events.
-        if let tao::event::Event::NewEvents(tao::event::StartCause::Init) = event {
-            let image = image::load_from_memory_with_format(
-                include_bytes!("../mbf.png"),
-                image::ImageFormat::Png,
-            )
-            .unwrap()
-            .into_rgba8();
-            let (width, height) = image.dimensions();
-            let rgba = image.into_raw();
-            let icon = tray_icon::Icon::from_rgba(rgba, width, height).unwrap();
-
-            let _ = tray_icon.get_or_init(|| {
-                Some(
-                    TrayIconBuilder::new()
-                        .with_tooltip(app_title)
-                        .with_icon(icon)
-                        .with_menu(Box::new(tray_menu.clone()))
-                        .build()
-                        .unwrap(),
-                )
-            });
-
-            #[cfg(target_os = "macos")]
-            unsafe {
-                use core_foundation::runloop::{CFRunLoopGetMain, CFRunLoopWakeUp};
-                let rl = CFRunLoopGetMain();
-                CFRunLoopWakeUp(rl);
+    if cfg!(target_os = "android") || !run_persistent.as_ref() {
+        #[cfg(target_os = "android")]
+        {
+            loop {
+                tokio::time::sleep(Duration::from_millis(16)).await;
             }
         }
 
-        // Handle menu events.
-        if let Ok(event) = menu_receiver.try_recv() {
-            // Open the browser
-            if event.id == menu_open.id() {
+        #[cfg(not(target_os = "android"))]
+        {
+            event_loop.run(move |_, _, control_flow| {
+                *control_flow =
+                    tao::event_loop::ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(16));
+            });
+        }
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        // Create the open menu item.
+        let menu_open = MenuItem::new("Open", true, None);
+
+        // Create the auto-launch configuration.
+        let auto_launch = {
+            // Clone the launch arguments and add the auto-close flag.
+            let mut auto_launch_args = launch_args.clone();
+            auto_launch_args.push(config::AUTO_START_ARG.to_string());
+
+            // Create the auto-launch configuration.
+            AutoLaunchBuilder::new()
+                .set_app_name(app_title)
+                .set_app_path(env::current_exe().unwrap().to_str().unwrap())
+                .set_args(&auto_launch_args)
+                .set_use_launch_agent(true)
+                .build()
+                .unwrap()
+        };
+
+        // Create the auto-run menu item.
+        let menu_auto_run = CheckMenuItem::new(
+            "Run at startup",
+            true,
+            auto_launch.is_enabled().unwrap(),
+            None,
+        );
+
+        // Create the quit menu item.
+        let menu_quit = MenuItem::new("Quit", true, None);
+
+        // Create the tray menu.
+        let tray_menu = Menu::new();
+        tray_menu
+            .append_items(&[
+                &menu_open,
+                &menu_auto_run,
+                &PredefinedMenuItem::separator(),
+                &menu_quit,
+            ])
+            .unwrap();
+
+        // Create the event receivers.
+        let menu_receiver = MenuEvent::receiver();
+
+        // Create the tray icon event receiver.
+        #[cfg(windows)]
+        let tray_receiver = TrayIconEvent::receiver();
+
+        // Create the tray icon.
+        let tray_icon: OnceLock<Option<TrayIcon>> = OnceLock::new();
+
+        println!("Starting event loop");
+        event_loop.run(move |event, _, control_flow| {
+            *control_flow =
+                tao::event_loop::ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(16));
+
+            if let tao::event::Event::Reopen { .. } = event {
                 start_browser(&browser_url);
                 return;
             }
 
-            // Toggle auto-run at startup
-            if event.id == menu_auto_run.id() {
-                if auto_launch.is_enabled().unwrap() {
-                    auto_launch.disable().unwrap();
-                } else {
-                    auto_launch.enable().unwrap();
+            // Handle initialization events.
+            if let tao::event::Event::NewEvents(tao::event::StartCause::Init) = event {
+                let image = image::load_from_memory_with_format(
+                    include_bytes!("../mbf.png"),
+                    image::ImageFormat::Png,
+                )
+                .unwrap()
+                .into_rgba8();
+                let (width, height) = image.dimensions();
+                let rgba = image.into_raw();
+                let icon = tray_icon::Icon::from_rgba(rgba, width, height).unwrap();
+
+                let _ = tray_icon.get_or_init(|| {
+                    Some(
+                        TrayIconBuilder::new()
+                            .with_tooltip(app_title)
+                            .with_icon(icon)
+                            .with_menu(Box::new(tray_menu.clone()))
+                            .build()
+                            .unwrap(),
+                    )
+                });
+
+                #[cfg(target_os = "macos")]
+                unsafe {
+                    use core_foundation::runloop::{CFRunLoopGetMain, CFRunLoopWakeUp};
+                    let rl = CFRunLoopGetMain();
+                    CFRunLoopWakeUp(rl);
                 }
-                menu_auto_run.set_checked(auto_launch.is_enabled().unwrap());
+            }
+
+            // Handle menu events.
+            if let Ok(event) = menu_receiver.try_recv() {
+                // Open the browser
+                if event.id == menu_open.id() {
+                    start_browser(&browser_url);
+                    return;
+                }
+
+                // Toggle auto-run at startup
+                if event.id == menu_auto_run.id() {
+                    if auto_launch.is_enabled().unwrap() {
+                        auto_launch.disable().unwrap();
+                    } else {
+                        auto_launch.enable().unwrap();
+                    }
+                    menu_auto_run.set_checked(auto_launch.is_enabled().unwrap());
+                    return;
+                }
+
+                // Quit the application
+                if event.id == menu_quit.id() {
+                    let mut event_loop_running = event_loop_running.as_ref().lock().unwrap();
+                    *event_loop_running = false;
+
+                    return;
+                }
+            }
+
+            // Handle tray icon double-click.
+            #[cfg(windows)]
+            if let Ok(TrayIconEvent::DoubleClick {
+                id: _,
+                position: _,
+                rect: _,
+                button: tray_icon::MouseButton::Left,
+            }) = tray_receiver.try_recv()
+            {
+                start_browser(&browser_url);
                 return;
             }
 
-            // Quit the application
-            if event.id == menu_quit.id() {
-                let mut event_loop_running = event_loop_running.as_ref().lock().unwrap();
-                *event_loop_running = false;
-
-                return;
-            }
-        }
-
-        // Handle tray icon double-click.
-        #[cfg(windows)]
-        if let Ok(TrayIconEvent::DoubleClick {
-            id: _,
-            position: _,
-            rect: _,
-            button: tray_icon::MouseButton::Left,
-        }) = tray_receiver.try_recv()
-        {
-            start_browser(&browser_url);
             return;
-        }
-
-        return;
-    });
+        });
+    }
 }
