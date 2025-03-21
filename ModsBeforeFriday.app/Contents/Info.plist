@@ -30,5 +30,7 @@
     <true />
     <key>NSHumanReadableCopyright</key>
     <string>Copyright (C) 2025 DanTheMan827</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>This app requires access to local network devices for ADB.</string>
   </dict>
 </plist>
