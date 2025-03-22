@@ -1,9 +1,11 @@
-use std::time::Duration;
+use std::{sync::OnceLock, time::Duration};
 
 #[cfg(not(target_os = "android"))]
 use std::env;
 
 use tokio::net::TcpStream;
+
+pub static ADB_PORT: OnceLock<u16> = OnceLock::new();
 
 /// Starts the ADB server using the provided executable path.
 ///
@@ -22,8 +24,7 @@ pub async fn adb_start(path: &str) -> tokio::io::Result<()> {
     use tokio::process::Command;
 
     let mut command = Command::new(path);
-    command.args(&["server", "nodaemon"]);
-    command.env("ADB_MDNS_OPENSCREEN", "1");
+    command.args(&["server", "nodaemon", "-P", ADB_PORT.get_or_init(|| 5037).to_string().as_str()]);
     command.stdout(Stdio::null());
     command.stderr(Stdio::null());
     #[cfg(windows)]
@@ -43,7 +44,8 @@ pub async fn adb_start(path: &str) -> tokio::io::Result<()> {
 ///
 /// A `tokio::io::Result<TcpStream>` representing the connection to the ADB server.
 pub async fn adb_connect() -> tokio::io::Result<TcpStream> {
-    TcpStream::connect("127.0.0.1:5037").await
+    let port = ADB_PORT.get_or_init(|| 5037);
+    TcpStream::connect(format!("127.0.0.1:{}", port)).await
 }
 
 /// Retries the connection to the ADB server up to 10 times with short delays.

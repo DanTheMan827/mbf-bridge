@@ -88,13 +88,13 @@ struct Args {
     #[arg[long, default_value_t = false, hide = cfg!(not(windows))]]
     console: bool,
 
-    /// Print help
-    #[arg[long, short]]
-    help: bool,
-
     /// Start the server without automatically opening the browser
     #[arg(long = AUTO_START_ARG.strip_prefix("--"), hide = cfg!(target_os = "android"), default_value_t = cfg!(target_os = "android"))]
     no_browser: bool,
+
+    /// The port that the adb server is running on
+    #[arg[long, default_value_t = 5037]]
+    adb_port: u16,
 
     /// Enable MBF development mode
     #[arg[long = "dev", default_value_t = false, help_heading = "Development Options"]]
@@ -115,6 +115,10 @@ struct Args {
     /// The IP address to bind the server to
     #[arg[long, default_value = DEFAULT_IP, help_heading = "Development Options"]]
     bind_ip: String,
+
+    /// Print help
+    #[arg[long, short]]
+    help: bool,
 }
 
 /// Entry point of the application.
@@ -139,6 +143,7 @@ async fn main() {
     let game_id = args.game_id.as_str();
     let mut open_browser = !args.no_browser;
     let proxy_requests = args.proxy;
+    let _ = adb::ADB_PORT.set(args.adb_port);
 
     // Allocate a console window if requested or needed.
     #[cfg(windows)]
