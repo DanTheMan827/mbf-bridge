@@ -87,7 +87,7 @@ struct Args {
     proxy: bool,
 
     /// Allocate a console window to display logs
-    #[arg[long, default_value_t = false, hide = cfg!(not(windows))]]
+    #[arg[long, default_value_t = false, hide = cfg!(not(windows)) || cfg!(debug_assertions)]]
     console: bool,
 
     /// Start the server without automatically opening the browser
@@ -240,14 +240,17 @@ async fn main() {
     let _ = adb::ADB_PORT.set(ARGS.adb_port);
 
     // Allocate a console window if requested or needed.
+    #[cfg(not(debug_assertions))]
     #[cfg(windows)]
     let allocated_console = (ARGS.console || ARGS.help) && console::allocate_console();
 
     // Display help message if requested.
     if ARGS.help {
         let mut cmd = Args::command();
-        let _ = cmd.print_help();
+        let help = cmd.render_help().to_string();
 
+
+        #[cfg(not(debug_assertions))]
         #[cfg(windows)]
         {
             use std::io;
@@ -256,6 +259,8 @@ async fn main() {
                 let _ = io::stdin().read_line(&mut String::new());
             }
         }
+
+        print_message(&help);
 
         return;
     }
