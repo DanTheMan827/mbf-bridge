@@ -25,6 +25,13 @@ impl ServerInfo {
             format!("http://{}:{}", assigned_ip, assigned_port)
         };
 
+        let assigned_port = if let Some(ref listener) = listener {
+            let local_addr = listener.local_addr().unwrap();
+            local_addr.port()
+        } else {
+            assigned_port
+        };
+
         Self {
             listener: listener,
             assigned_ip,
