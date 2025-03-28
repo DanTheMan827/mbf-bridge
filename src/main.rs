@@ -32,6 +32,8 @@ use clap::{arg, command, CommandFactory, Parser};
 use config::{AUTO_START_ARG, DEFAULT_GAME_ID, DEFAULT_IP, DEFAULT_PORT, DEFAULT_PROXY, DEFAULT_URL};
 use server::router_instance::get_router_instance;
 use urlencoding::encode as url_encode;
+use serde::Serialize;
+use lazy_static::lazy_static;
 
 #[cfg(not(target_os = "android"))]
 use auto_launch::AutoLaunchBuilder;
@@ -66,7 +68,7 @@ use tray_icon::{
 #[cfg(not(target_os = "macos"))]
 use tray_icon::TrayIconEvent;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Serialize, Clone)]
 #[command(version, about, long_about = None, disable_help_flag = true)]
 struct Args {
     #[arg(long, default_value_t = DEFAULT_PORT)]
@@ -96,6 +98,10 @@ struct Args {
     #[arg[long, default_value_t = 5037]]
     adb_port: u16,
 
+    /// Output the startup information as JSON
+    #[arg[long, default_value_t = false, help_heading = "Development Options"]]
+    output_json: bool,
+
     /// Enable MBF development mode
     #[arg[long = "dev", default_value_t = false, help_heading = "Development Options"]]
     dev_mode: bool,
@@ -121,6 +127,96 @@ struct Args {
     help: bool,
 }
 
+/// Struct to hold startup information for JSON output.
+#[derive(Serialize, Clone)]
+struct StartupInfo {
+    allowed_origins: Vec<String>,
+    server_url: String,
+    browser_url: String,
+    args: Args,
+}
+
+/// A generic struct representing a message with a type key.
+#[derive(Debug, Serialize, Clone)]
+struct Message<T> {
+    message_type: String,
+    payload: T,
+}
+
+impl<T> Message<T> {
+    /// Creates a new message with the given payload.
+    /// The `message_type` is automatically set to the name of the type `T`.
+    fn new(payload: T) -> Self {
+        Self {
+            message_type: std::any::type_name::<T>()
+                .to_string()
+                .trim_start_matches("mbf_bridge::")
+                .to_string(),
+            payload,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct ErrorMessage {
+    message: String,
+}
+
+impl ErrorMessage {
+    /// Creates a new standard message with the given message.
+    fn from_str(message: &str) -> Self {
+        Self {
+            message: message.to_string(),
+        }
+    }
+
+    /// Creates a new standard message from a string.
+    fn from_string(message: String) -> Self {
+        Self { message }
+    }
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct StandardMesage {
+    message: String,
+}
+
+impl StandardMesage {
+    /// Creates a new standard message with the given message.
+    fn from_str(message: &str) -> Self {
+        Self {
+            message: message.to_string(),
+        }
+    }
+
+    /// Creates a new standard message from a string.
+    fn from_string(message: String) -> Self {
+        Self { message }
+    }
+}
+
+lazy_static! {
+    static ref ARGS: Args = Args::parse();
+}
+
+pub fn eprint_message(message: &str) {
+    if (ARGS.output_json) {
+        let json = serde_json::to_string(&Message::new(ErrorMessage::from_str(message))).unwrap();
+        println!("{}", json);
+    } else {
+        eprintln!("{}", message);
+    }
+}
+
+pub fn print_message(message: &str) {
+    if (ARGS.output_json) {
+        let json = serde_json::to_string(&Message::new(StandardMesage::from_str(message))).unwrap();
+        println!("{}", json);
+    } else {
+        println!("{}", message);
+    }
+}
+
 /// Entry point of the application.
 #[tokio::main]
 async fn main() {
@@ -133,24 +229,22 @@ async fn main() {
         .filter(|item| **item != config::AUTO_START_ARG.to_owned())
         .collect();
 
-    let args = Args::parse();
-
-    let mut port = args.port;
-    let run_persistent = !args.auto_close;
-    let app_url = args.url.as_str();
-    let dev_mode = args.dev_mode;
-    let ignore_package_id = args.ignore_package_id;
-    let game_id = args.game_id.as_str();
-    let mut open_browser = !args.no_browser;
-    let proxy_requests = args.proxy;
-    let _ = adb::ADB_PORT.set(args.adb_port);
+    let mut port = ARGS.port;
+    let run_persistent = !ARGS.auto_close;
+    let app_url = ARGS.url.as_str();
+    let dev_mode = ARGS.dev_mode;
+    let ignore_package_id = ARGS.ignore_package_id;
+    let game_id = ARGS.game_id.as_str();
+    let mut open_browser = !ARGS.no_browser;
+    let proxy_requests = ARGS.proxy;
+    let _ = adb::ADB_PORT.set(ARGS.adb_port);
 
     // Allocate a console window if requested or needed.
     #[cfg(windows)]
-    let allocated_console = (args.console || args.help) && console::allocate_console();
+    let allocated_console = (ARGS.console || ARGS.help) && console::allocate_console();
 
     // Display help message if requested.
-    if args.help {
+    if ARGS.help {
         let mut cmd = Args::command();
         let _ = cmd.print_help();
 
@@ -158,7 +252,7 @@ async fn main() {
         {
             use std::io;
             if allocated_console {
-                println!("Press Enter to exit...");
+                print_message("Press Enter to exit...");
                 let _ = io::stdin().read_line(&mut String::new());
             }
         }
@@ -209,18 +303,17 @@ async fn main() {
             allowed_origins.push(app_origin.as_str());
         }
 
-        if args.additional_origins.len() > 0 {
-            for origin in args.additional_origins {
+        let additional_origins: &Vec<String> = ARGS.additional_origins.as_ref();
+        if additional_origins.len() > 0 {
+            for origin in additional_origins {
                 if !allowed_origins.contains(&origin.as_str()) {
-                    allowed_origins.push(Box::leak(origin.into_boxed_str()));
+                    allowed_origins.push(Box::leak(origin.clone().into_boxed_str()));
                 }
             }
         }
 
         allowed_origins
     };
-
-    println!("Allowed Origins: {:?}", allowed_origins);
 
     // ------------------------------
     // Single Instance Check
@@ -232,7 +325,7 @@ async fn main() {
     let single_instance = true;
 
     // Bind the server listener.
-    let server_info = ServerInfo::new(single_instance, args.bind_ip.to_string(), Some(port)).await;
+    let server_info = ServerInfo::new(single_instance, ARGS.bind_ip.to_string(), Some(port)).await;
 
     // Assign the browser URL with query parameters.
     let browser_url = {
@@ -284,12 +377,25 @@ async fn main() {
     };
 
     // Setup the router instance.
-    let (app, last_request_time) = get_router_instance(allowed_origins, app_url.to_string());
+    let (app, last_request_time) = get_router_instance(allowed_origins.clone(), app_url.to_string());
+
+    // Log the startup information.
+    if ARGS.output_json {
+        let startup_info = StartupInfo {
+            allowed_origins: allowed_origins.iter().map(|s| s.to_string()).collect(),
+            server_url: server_info.assigned_url.clone(),
+            browser_url: browser_url.clone(),
+            args: ARGS.clone(),
+        };
+        let json = serde_json::to_string(&Message::<StartupInfo>::new(startup_info)).unwrap();
+        println!("{}", json);
+    } else {
+        println!("Allowed Origins: {:?}", allowed_origins);
+        println!("Server is running: {}", server_info.assigned_url);
+        println!("Browser URL: {}", browser_url);
+    }
 
     // Set the global proxy host.
-    println!("Server is running: {}", server_info.assigned_url);
-    println!("Browser URL: {}", browser_url);
-
     let browser_url = Arc::new(browser_url);
 
     if !single_instance && port > 0 {
@@ -378,13 +484,13 @@ async fn main() {
             tokio::spawn(async move {
                 tokio::select! {
                     _ = axum::serve(listener, app) => {
-                        println!("Server ended, this shouldn't happen.");
+                        eprint_message("Server ended, this shouldn't happen.");
                         exit(1);
                     },
-                    _ = shutdown_signal => println!("Shutdown signal received."),
-                    _ = unix_hup_signal => println!("SIGHUP signal received."),
-                    _ = idle_check => println!("No requests received in the last 10 seconds."),
-                    _ = event_loop_check => println!("Event loop ended.")
+                    _ = shutdown_signal => print_message("Shutdown signal received."),
+                    _ = unix_hup_signal => print_message("SIGHUP signal received."),
+                    _ = idle_check => print_message("No requests received in the last 10 seconds."),
+                    _ = event_loop_check => print_message("Event loop ended.")
                 }
             })
         };
@@ -393,7 +499,7 @@ async fn main() {
             tokio::spawn(async move {
                 let _ = server.await;
 
-                println!("Exiting...");
+                print_message("Exiting...");
                 exit(0);
             })
         }
@@ -484,7 +590,7 @@ async fn main() {
         // Create the tray icon.
         let tray_icon: OnceLock<Option<TrayIcon>> = OnceLock::new();
 
-        println!("Starting event loop");
+        print_message("Starting event loop");
         event_loop.run(move |event, _, control_flow| {
             *control_flow =
                 tao::event_loop::ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(16));
