@@ -36,6 +36,10 @@ jobs:
             arch: aarch64-linux-android
             artifact_name: "mbf-bridge-android-aarch64"
 
+          - os: ubuntu-latest
+            arch: x86_64-linux-android
+            artifact_name: "mbf-bridge-android-x86_64"
+
           - os: macos-13
             arch: x86_64-apple-darwin
             artifact_name: "mbf-bridge-macos-intel"
@@ -70,28 +74,28 @@ jobs:
 
       - name: Restore NDK cache (Android only)
         id: ndk_cache
-        if: matrix.arch == 'aarch64-linux-android'
+        if: matrix.arch == 'aarch64-linux-android' || matrix.arch == 'x86_64-linux-android'
         uses: actions/cache/restore@v4
         with:
           path: ~/android-ndk-${{ env.NDK }}
           key: linux-android-ndk-${{ env.NDK }}
 
       - name: Install NDK (Android only)
-        if: matrix.arch == 'aarch64-linux-android' && steps.ndk_cache.outputs.cache-hit != 'true'
+        if: (matrix.arch == 'aarch64-linux-android' || matrix.arch == 'x86_64-linux-android') && steps.ndk_cache.outputs.cache-hit != 'true'
         run: |
           curl -L "https://dl.google.com/android/repository/android-ndk-${{ env.NDK }}-linux.zip" -o ndk.zip
           unzip ndk.zip -d ~
           rm ndk.zip
 
       - name: Save NDK cache (Android only)
-        if: matrix.arch == 'aarch64-linux-android' && steps.ndk_cache.outputs.cache-hit != 'true'
+        if: (matrix.arch == 'aarch64-linux-android' || matrix.arch == 'x86_64-linux-android') && steps.ndk_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ~/android-ndk-${{ env.NDK }}
           key: linux-android-ndk-${{ env.NDK }}
 
       - name: Export Android NDK path (Android only)
-        if: matrix.arch == 'aarch64-linux-android'
+        if: matrix.arch == 'aarch64-linux-android' || matrix.arch == 'x86_64-linux-android'
         run: |
           export ANDROID_NDK_HOME=~/android-ndk-${{ env.NDK }}
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
@@ -99,11 +103,15 @@ jobs:
           echo "PATH=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH" >> $GITHUB_ENV
 
       - name: Create cargo config
-        if: matrix.arch == 'aarch64-linux-android'
+        if: matrix.arch == 'aarch64-linux-android' || matrix.arch == 'x86_64-linux-android'
         run: |
           echo '[target.aarch64-linux-android]
           ar = "${{ env.ANDROID_NDK_ROOT }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
           linker = "${{ env.ANDROID_NDK_ROOT }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android31-clang"' > /home/runner/.cargo/config.toml
+
+          echo '[target.x86_64-linux-android]
+          ar = "${{ env.ANDROID_NDK_ROOT }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+          linker = "${{ env.ANDROID_NDK_ROOT }}/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android31-clang"' > /home/runner/.cargo/config.toml
 
       - name: Build (Release)
         shell: bash
