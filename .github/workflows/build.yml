@@ -103,12 +103,15 @@ jobs:
           echo "PATH=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH" >> $GITHUB_ENV
 
       - name: Create cargo config
-        if: matrix.arch == 'aarch64-linux-android' || matrix.arch == 'x86_64-linux-android'
+        if: matrix.arch == 'aarch64-linux-android'
         run: |
           echo '[target.aarch64-linux-android]
           ar = "${{ env.ANDROID_NDK_ROOT }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
           linker = "${{ env.ANDROID_NDK_ROOT }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android31-clang"' > /home/runner/.cargo/config.toml
 
+      - name: Create cargo config
+        if: matrix.arch == 'x86_64-linux-android'
+        run: |
           echo '[target.x86_64-linux-android]
           ar = "${{ env.ANDROID_NDK_ROOT }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
           linker = "${{ env.ANDROID_NDK_ROOT }}/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android31-clang"' > /home/runner/.cargo/config.toml
