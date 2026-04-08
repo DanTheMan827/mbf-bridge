@@ -195,6 +195,10 @@ impl StandardMesage {
     }
 }
 
+/// How long (in seconds) to wait for in-flight connections to drain during
+/// graceful shutdown before forcing the process to exit.
+const SHUTDOWN_TIMEOUT_SECS: u64 = 5;
+
 lazy_static! {
     static ref ARGS: Args = Args::parse();
 }
@@ -524,7 +528,7 @@ async fn main() {
                 // Wait for the server to finish draining.  A 5-second timeout
                 // prevents hanging when long-lived WebSocket connections are
                 // still open at shutdown time.
-                if tokio::time::timeout(Duration::from_secs(5), server).await.is_err() {
+                if tokio::time::timeout(Duration::from_secs(SHUTDOWN_TIMEOUT_SECS), server).await.is_err() {
                     eprint_message("Server shutdown timed out, forcing exit.");
                 }
 
