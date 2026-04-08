@@ -43,11 +43,11 @@ jobs:
             arch: x86_64-linux-android
             artifact_name: "mbf-bridge-android-x86_64"
 
-          - os: macos-13
+          - os: macos-latest
             arch: x86_64-apple-darwin
             artifact_name: "mbf-bridge-macos-intel"
 
-          - os: macos-13
+          - os: macos-latest
             arch: aarch64-apple-darwin
             artifact_name: "mbf-bridge-macos-arm"
 
