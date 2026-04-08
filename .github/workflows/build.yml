@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - '*'
+  pull_request:
+    branches:
+      - '*'
 
 env:
   OPENSSL_VERSION: "3.4.1"
