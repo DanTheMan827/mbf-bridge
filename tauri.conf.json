@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ModsBeforeFriday Bridge",
+  "version": "0.1.0",
+  "identifier": "xyz.bsquest.mbf-bridge",
+  "build": {},
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.png"],
+    "android": {
+      "minSdkVersion": 24
+    }
+  }
+}
