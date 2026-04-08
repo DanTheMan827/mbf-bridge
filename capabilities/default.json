@@ -3,6 +3,9 @@
   "identifier": "default",
   "description": "Grants access to core Tauri APIs and the ADB bridge commands for all windows.",
   "windows": ["*"],
+  "remote": {
+    "urls": ["https://*/*", "http://*/*"]
+  },
   "permissions": [
     "core:default",
     "core:webview:allow-set-webview-zoom",

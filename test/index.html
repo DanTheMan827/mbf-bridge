@@ -386,17 +386,29 @@ function readUntil(conn, pred, timeout) {
 async function adbRequest(conn, service) {
   var msg = adbMsg(service);
   logLine("tx", "→ [" + service + "] " + hexDump(msg));
+
+  // Register the data listener BEFORE writing so the response cannot arrive
+  // (and be discarded) before readUntil has a chance to register its onData.
+  var headerPromise = readUntil(conn, function (b) { return b.length >= 8; });
   await conn.write(msg);
+
   // Need at least OKAY(4) + len(4) + data
-  var resp = await readUntil(conn, function (b) { return b.length >= 8; });
+  var resp = await headerPromise;
   var status = dec.decode(resp.slice(0, 4));
   if (status !== "OKAY") {
     throw new Error("ADB replied: " + status + " – " + dec.decode(resp.slice(4)));
   }
   var dataLen = parseInt(dec.decode(resp.slice(4, 8)), 16);
-  // Wait for the full payload
-  if (resp.length < 8 + dataLen) {
-    resp = await readUntil(conn, function (b) { return b.length >= 8 + dataLen; });
+
+  // If the full payload hasn't arrived yet, read exactly the remaining bytes
+  // and append them to what we already have.
+  var needed = 8 + dataLen - resp.length;
+  if (needed > 0) {
+    var more = await readUntil(conn, function (b) { return b.length >= needed; });
+    var combined = new Uint8Array(resp.length + more.length);
+    combined.set(resp);
+    combined.set(more, resp.length);
+    resp = combined;
   }
   return resp.slice(8, 8 + dataLen);
 }
