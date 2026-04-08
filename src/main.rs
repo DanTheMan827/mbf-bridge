@@ -213,12 +213,17 @@ fn create_app_window(
     url: tauri::WebviewUrl,
     init_script: &str,
 ) -> tauri::Result<tauri::WebviewWindow> {
-    tauri::WebviewWindowBuilder::new(app, "main", url)
+    let builder = tauri::WebviewWindowBuilder::new(app, "main", url)
+        .initialization_script(init_script);
+
+    // title, inner_size and min_inner_size are desktop-only APIs.
+    #[cfg(desktop)]
+    let builder = builder
         .title("ModsBeforeFriday")
         .inner_size(1280.0, 800.0)
-        .min_inner_size(800.0, 600.0)
-        .initialization_script(init_script)
-        .build()
+        .min_inner_size(800.0, 600.0);
+
+    builder.build()
 }
 
 // ---------------------------------------------------------------------------
