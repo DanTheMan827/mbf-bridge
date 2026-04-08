@@ -5,6 +5,7 @@
   "windows": ["*"],
   "permissions": [
     "core:default",
+    "core:webview:allow-set-webview-zoom",
     "allow-adb-connect",
     "allow-adb-write",
     "allow-adb-ack",

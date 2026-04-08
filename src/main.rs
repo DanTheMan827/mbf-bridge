@@ -223,7 +223,7 @@ fn create_app_window(
         .inner_size(1280.0, 800.0)
         .min_inner_size(800.0, 600.0);
 
-    builder.build()
+    builder.devtools(true).zoom_hotkeys_enabled(true).build()
 }
 
 // ---------------------------------------------------------------------------
@@ -311,6 +311,8 @@ fn setup_tray(
             .inner_size(1280.0, 800.0)
             .min_inner_size(800.0, 600.0)
             .initialization_script(init_script)
+            .devtools(true)
+            .zoom_hotkeys_enabled(true)
             .build();
         }
     }

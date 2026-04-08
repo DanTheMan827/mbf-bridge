@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Grants access to core Tauri APIs and the ADB bridge commands for all windows.","local":true,"windows":["*"],"permissions":["core:default","allow-adb-connect","allow-adb-write","allow-adb-ack","allow-adb-close"]}}
+{"default":{"identifier":"default","description":"Grants access to core Tauri APIs and the ADB bridge commands for all windows.","local":true,"windows":["*"],"permissions":["core:default","core:webview:allow-set-webview-zoom","allow-adb-connect","allow-adb-write","allow-adb-ack","allow-adb-close"]}}
