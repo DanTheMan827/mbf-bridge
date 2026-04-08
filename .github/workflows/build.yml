@@ -146,7 +146,7 @@ jobs:
 
   lipo:
     name: "Create macOS universal binary"
-    runs-on: macos-13
+    runs-on: macos-latest
     needs: build
     strategy:
       matrix:
