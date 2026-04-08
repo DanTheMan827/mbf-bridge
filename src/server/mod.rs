@@ -1,6 +1,6 @@
 pub mod router_instance;
 
-use crate::{adb::adb_connect_or_start, eprint_message};
+use crate::adb::adb_connect_or_start;
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{SinkExt, StreamExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -13,7 +13,7 @@ pub async fn handle_websocket(ws: WebSocket) {
     let adb_conn = match adb_connect_or_start().await {
         Ok(conn) => conn,
         Err(e) => {
-            eprint_message(format!("Failed to connect to ADB: {:?}", e).as_str());
+            eprintln!("Failed to connect to ADB: {:?}", e);
             return;
         }
     };
@@ -28,7 +28,7 @@ pub async fn handle_websocket(ws: WebSocket) {
                 match msg {
                     Ok(Message::Binary(packet)) => {
                         if let Err(e) = adb_writer.write_all(&packet).await {
-                            eprint_message(format!("Error writing to ADB: {:?}", e).as_str());
+                            eprintln!("Error writing to ADB: {:?}", e);
                             break;
                         }
                     }
@@ -36,13 +36,13 @@ pub async fn handle_websocket(ws: WebSocket) {
                         // Ignore non-binary messages.
                     }
                     Err(e) => {
-                        eprint_message(format!("Error reading from websocket: {:?}", e).as_str());
+                        eprintln!("Error reading from websocket: {:?}", e);
                         break;
                     }
                 }
             }
             if let Err(e) = adb_writer.shutdown().await {
-                eprint_message(format!("Error shutting down ADB writer: {:?}", e).as_str());
+                eprintln!("Error shutting down ADB writer: {:?}", e);
             }
         },
         async {
@@ -52,7 +52,7 @@ pub async fn handle_websocket(ws: WebSocket) {
                 match adb_reader.read(&mut buf).await {
                     Ok(0) => {
                         if let Err(e) = ws_writer.close().await {
-                            eprint_message(format!("Error closing websocket: {:?}", e).as_str());
+                            eprintln!("Error closing websocket: {:?}", e);
                         }
                         break;
                     }
@@ -61,14 +61,14 @@ pub async fn handle_websocket(ws: WebSocket) {
                             .send(Message::binary(buf[..n].to_vec()))
                             .await
                         {
-                            eprint_message(format!("Error sending message on websocket: {:?}", e).as_str());
+                            eprintln!("Error sending message on websocket: {:?}", e);
                             break;
                         }
                     }
                     Err(e) => {
-                        eprint_message(format!("Error reading from ADB: {:?}", e).as_str());
+                        eprintln!("Error reading from ADB: {:?}", e);
                         if let Err(e) = ws_writer.close().await {
-                            eprint_message(format!("Error closing websocket: {:?}", e).as_str());
+                            eprintln!("Error closing websocket: {:?}", e);
                         }
                         break;
                     }
