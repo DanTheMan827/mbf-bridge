@@ -5,10 +5,6 @@ version = "0.1.0"
 edition = "2021"
 build = "build.rs"
 
-[package.metadata.winresource]
-ProductName = "ModsBeforeFriday ADB Bridge"
-OriginalFilename = "mbf_bridge.exe"
-
 [profile.release]
 strip = true
 lto = true
@@ -38,7 +34,6 @@ winreg = "0.55.0"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
-winresource = "0.1.20"
 
 [target."cfg(target_os = \"macos\")".dependencies]
 core-foundation = "0.10.0"
