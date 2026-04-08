@@ -484,25 +484,49 @@ async fn main() {
     };
 
     let _ = {
+        // A oneshot channel lets the shutdown-signal watcher trigger graceful
+        // drain on the server without abruptly dropping the TcpListener.  On
+        // Windows, dropping the listener while IOCP operations are still
+        // pending can leave the port "in use" until the OS cleans up, so we
+        // must wait for the server to finish draining before we exit.
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+
         let server = {
             let listener = server_info.listener.unwrap();
             tokio::spawn(async move {
-                tokio::select! {
-                    _ = axum::serve(listener, app) => {
-                        eprint_message("Server ended, this shouldn't happen.");
+                axum::serve(listener, app)
+                    .with_graceful_shutdown(async move {
+                        // Complete once the oneshot fires.
+                        let _ = shutdown_rx.await;
+                    })
+                    .await
+                    .unwrap_or_else(|e| {
+                        eprint_message(&format!("Server ended unexpectedly: {:?}", e));
                         exit(1);
-                    },
-                    _ = shutdown_signal => print_message("Shutdown signal received."),
-                    _ = unix_hup_signal => print_message("SIGHUP signal received."),
-                    _ = idle_check => print_message("No requests received in the last 10 seconds."),
-                    _ = event_loop_check => print_message("Event loop ended.")
-                }
+                    });
             })
         };
 
         {
             tokio::spawn(async move {
-                let _ = server.await;
+                // Wait for any shutdown trigger.
+                tokio::select! {
+                    _ = shutdown_signal => print_message("Shutdown signal received."),
+                    _ = unix_hup_signal => print_message("SIGHUP signal received."),
+                    _ = idle_check => print_message("No requests received in the last 10 seconds."),
+                    _ = event_loop_check => print_message("Event loop ended.")
+                }
+
+                // Signal the server to stop accepting new connections and
+                // begin draining existing ones.
+                let _ = shutdown_tx.send(());
+
+                // Wait for the server to finish draining.  A 5-second timeout
+                // prevents hanging when long-lived WebSocket connections are
+                // still open at shutdown time.
+                if tokio::time::timeout(Duration::from_secs(5), server).await.is_err() {
+                    eprint_message("Server shutdown timed out, forcing exit.");
+                }
 
                 print_message("Exiting...");
                 exit(0);
