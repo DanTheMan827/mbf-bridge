@@ -17,7 +17,7 @@
 // ---------------------------------------------------------------------------
 // Connection handle
 // ---------------------------------------------------------------------------
- 
+
 /** Handle to an open ADB TCP connection proxied through the Tauri IPC bridge. */
 export interface MbfAdbConnection {
   /** Unique connection identifier (UUID). */
@@ -119,4 +119,4 @@ declare global {
   }
 }
 
-export {};
+export { };

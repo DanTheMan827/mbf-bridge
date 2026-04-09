@@ -116,7 +116,9 @@
 
         connections.delete(payload.id);
         conn.closeListeners.forEach(function (cb) {
-          try { cb(); } catch (_) {}
+          try {
+            cb();
+          } catch (_) {}
         });
       }),
     ]);
@@ -130,10 +132,14 @@
 
   function createConnectionObject(id, conn) {
     return {
-      get id() { return id; },
+      get id() {
+        return id;
+      },
 
       /** True once the connection has been closed (either side). */
-      get closed() { return !connections.has(id); },
+      get closed() {
+        return !connections.has(id);
+      },
 
       /**
        * Write bytes to the ADB connection.
@@ -150,7 +156,9 @@
         } else if (data instanceof ArrayBuffer) {
           arr = new Uint8Array(data);
         } else {
-          return Promise.reject(new TypeError("data must be Uint8Array or ArrayBuffer"));
+          return Promise.reject(
+            new TypeError("data must be Uint8Array or ArrayBuffer"),
+          );
         }
         return invoke("adb_write", { id: id, data: arr });
       },
@@ -164,7 +172,9 @@
        */
       onData: function (callback) {
         conn.dataListeners.add(callback);
-        return function () { conn.dataListeners.delete(callback); };
+        return function () {
+          conn.dataListeners.delete(callback);
+        };
       },
 
       /**
@@ -174,7 +184,9 @@
        */
       onClose: function (callback) {
         conn.closeListeners.add(callback);
-        return function () { conn.closeListeners.delete(callback); };
+        return function () {
+          conn.closeListeners.delete(callback);
+        };
       },
 
       /**
@@ -187,7 +199,9 @@
 
         connections.delete(id);
         conn.closeListeners.forEach(function (cb) {
-          try { cb(); } catch (_) {}
+          try {
+            cb();
+          } catch (_) {}
         });
         return invoke("adb_close", { id: id }).catch(function () {});
       },
