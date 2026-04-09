@@ -7,8 +7,8 @@ use tauri::{Emitter, WebviewWindow};
 /// all the way to the ADB TCP socket and ultimately to the device.
 const FLOW_WINDOW: usize = 8;
 
-/// Read buffer size per chunk (16 KiB).
-const READ_BUFFER_SIZE: usize = 16 * 1024;
+/// Read buffer size per chunk (1 MiB).
+const READ_BUFFER_SIZE: usize = 1 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // Event payloads

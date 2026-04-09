@@ -4,10 +4,13 @@
   "description": "Grants access to core Tauri APIs and the ADB bridge commands for all windows.",
   "windows": ["*"],
   "remote": {
-    "urls": ["https://*/*", "http://*/*"]
+    "urls": ["https://*", "http://*", "https://*:*", "http://*:*"]
   },
   "permissions": [
     "core:default",
+    "core:event:allow-emit",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "core:webview:allow-set-webview-zoom",
     "allow-adb-connect",
     "allow-adb-write",

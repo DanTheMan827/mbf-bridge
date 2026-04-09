@@ -146,9 +146,9 @@
         }
         var arr;
         if (data instanceof Uint8Array) {
-          arr = Array.from(data);
+          arr = data;
         } else if (data instanceof ArrayBuffer) {
-          arr = Array.from(new Uint8Array(data));
+          arr = new Uint8Array(data);
         } else {
           return Promise.reject(new TypeError("data must be Uint8Array or ArrayBuffer"));
         }
