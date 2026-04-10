@@ -26,6 +26,9 @@ use urlencoding::encode as url_encode;
 #[cfg(not(target_os = "android"))]
 use single_instance::SingleInstance;
 
+#[cfg(desktop)]
+use rfd::FileDialog;
+
 // ---------------------------------------------------------------------------
 // CLI arguments
 // ---------------------------------------------------------------------------
@@ -154,7 +157,33 @@ fn create_app_window(
         .title("ModsBeforeFriday")
         .inner_size(1280.0, 800.0)
         .min_inner_size(800.0, 600.0)
-        .on_download(|_window, _download| {
+        .on_download(|_window, download| {
+            if let tauri::webview::DownloadEvent::Requested { url, destination } = download {
+                // Extract the suggested filename from the URL path, decode any
+                // percent-encoded characters, and fall back to "download" when
+                // the URL has no useful file segment.
+                let raw_name = url
+                    .path_segments()
+                    .and_then(|s| s.last())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("download");
+                let suggested = urlencoding::decode(raw_name)
+                    .map(|s| s.into_owned())
+                    .unwrap_or_else(|_| raw_name.to_owned());
+
+                let chosen = FileDialog::new()
+                    .set_title("Save File")
+                    .set_file_name(&suggested)
+                    .save_file();
+
+                match chosen {
+                    Some(path) => {
+                        *destination = path;
+                        return true;
+                    }
+                    None => return false, // User cancelled
+                }
+            }
             true
         })
         .on_navigation(move |nav_url| {
