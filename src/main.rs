@@ -144,6 +144,7 @@ fn create_app_window(
     url: tauri::WebviewUrl,
     init_script: &str,
 ) -> tauri::Result<tauri::WebviewWindow> {
+    let main_url = url.clone();
     let builder = tauri::WebviewWindowBuilder::new(app, "main", url)
         .initialization_script(init_script);
 
@@ -152,7 +153,36 @@ fn create_app_window(
     let builder = builder
         .title("ModsBeforeFriday")
         .inner_size(1280.0, 800.0)
-        .min_inner_size(800.0, 600.0);
+        .min_inner_size(800.0, 600.0)
+        .on_download(|_window, _download| {
+            true
+        })
+        .on_navigation(move |nav_url| {
+            let url_str = nav_url.as_str();
+            let main_url = main_url.to_string();
+            let main_url = main_url.as_str();
+            if url_str.starts_with(main_url) {
+                return true;
+            }
+            
+            if url_str.starts_with("http://") || url_str.starts_with("https://") {
+                // Open external links in the default browser.
+                let _ = open::that(url_str);
+                return false;
+            }
+            
+            return false;
+        })
+        .on_new_window(move |nav_url, _features| {
+            let url_str = nav_url.as_str();
+            
+            if url_str.starts_with("http://") || url_str.starts_with("https://") {
+                // Open external links in the default browser.
+                let _ = open::that(url_str);
+            }
+            
+            tauri::webview::NewWindowResponse::Deny
+        });
 
     builder.devtools(true).zoom_hotkeys_enabled(true).build()
 }
