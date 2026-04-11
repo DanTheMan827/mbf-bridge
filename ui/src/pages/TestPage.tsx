@@ -4,8 +4,10 @@ import {
   useRef,
   useState,
 } from "react";
+import type { AdbServerClient } from "@yume-chan/adb";
 import type { AdbConnection } from "../types/global";
 import { useLog, type LogClass } from "../hooks/useLog";
+import { useDeviceScanner } from "../hooks/useDeviceScanner";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -149,6 +151,171 @@ function LogPane({ entries }: LogPaneProps) {
           <span className={e.cls}>{e.msg}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DevicesCard sub-component
+// ---------------------------------------------------------------------------
+
+const STATE_CONFIG: Record<
+  AdbServerClient.ConnectionState,
+  { color: string; label: string }
+> = {
+  device:       { color: "var(--green)",  label: "Online"        },
+  unauthorized: { color: "var(--yellow)", label: "Unauthorized"  },
+  offline:      { color: "var(--subtext)", label: "Offline"      },
+};
+
+function stateConfig(state: string) {
+  return (
+    STATE_CONFIG[state as AdbServerClient.ConnectionState] ?? {
+      color: "var(--subtext)",
+      label: state,
+    }
+  );
+}
+
+interface DevicesCardProps {
+  enabled: boolean;
+}
+
+function DevicesCard({ enabled }: DevicesCardProps) {
+  const { devices, status, error } = useDeviceScanner(enabled);
+
+  const statusBadge = () => {
+    if (status === "tracking")
+      return { bg: "var(--green)", text: "Tracking" };
+    if (status === "connecting")
+      return { bg: "var(--yellow)", text: "Connecting…" };
+    if (status === "error")
+      return { bg: "var(--red)", text: "Error" };
+    return { bg: "var(--border)", text: "Idle" };
+  };
+
+  const badge = statusBadge();
+
+  return (
+    <div className="card">
+      <div className="card-header" style={{ gap: "0.5rem" }}>
+        <span className="card-title" style={{ flex: 1 }}>
+          Live Devices
+        </span>
+        <span
+          style={{
+            background: badge.bg,
+            color: "#fff",
+            borderRadius: 99,
+            fontSize: "0.65rem",
+            fontWeight: 700,
+            padding: "0.15rem 0.55rem",
+            letterSpacing: "0.03em",
+          }}
+        >
+          {badge.text}
+        </span>
+      </div>
+      <div className="card-body">
+        {error && (
+          <div
+            style={{
+              fontSize: "0.78rem",
+              color: "var(--red)",
+              marginBottom: "0.5rem",
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        {devices.length === 0 ? (
+          <div style={{ fontSize: "0.82rem", color: "var(--subtext)" }}>
+            {status === "tracking"
+              ? "No devices connected."
+              : "Waiting for ADB server…"}
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {devices.map((d) => {
+              const cfg = stateConfig(d.state);
+              return (
+                <div
+                  key={String(d.transportId)}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "auto 1fr auto",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    padding: "0.45rem 0.6rem",
+                    borderRadius: "calc(var(--radius) - 2px)",
+                    background: "var(--surface-2)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  {/* Status dot */}
+                  <div
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: cfg.color,
+                      flexShrink: 0,
+                    }}
+                    title={cfg.label}
+                  />
+
+                  {/* Device info */}
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontFamily: "var(--mono)",
+                        fontSize: "0.8rem",
+                        fontWeight: 600,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      title={d.serial}
+                    >
+                      {d.serial}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "0.7rem",
+                        color: "var(--subtext)",
+                        marginTop: "0.1rem",
+                      }}
+                    >
+                      {[d.model, d.product, d.device]
+                        .filter(Boolean)
+                        .join(" · ") || "—"}
+                      {" · "}
+                      <span style={{ fontFamily: "var(--mono)" }}>
+                        transport_id:{String(d.transportId)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* State badge */}
+                  <span
+                    style={{
+                      fontSize: "0.65rem",
+                      fontWeight: 700,
+                      color: cfg.color,
+                      letterSpacing: "0.03em",
+                      textTransform: "uppercase",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {cfg.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -415,6 +582,9 @@ export default function TestPage() {
           gap: "1rem",
         }}
       >
+        {/* Live device scanner */}
+        <DevicesCard enabled={isAdbAvailable} />
+
         {/* Connections */}
         <div className="card">
           <div className="card-header">
