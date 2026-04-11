@@ -191,9 +191,17 @@ jobs:
           cargo build --release --target ${{ matrix.arch }} --no-default-features
 
       - name: Upload artifact (Release)
+        if: matrix.embed_adb == 'false'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}-release-${{ matrix.embed_adb == 'true' && '' || 'no-embed-adb' }}
+          name: ${{ matrix.artifact_name }}-release-no-embedded-adb
+          path: target/${{ matrix.arch }}/release/mbf_bridge${{ matrix.binary_extension }}
+
+      - name: Upload artifact (Release, Embedded ADB)
+        if: matrix.embed_adb == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}-release}
           path: target/${{ matrix.arch }}/release/mbf_bridge${{ matrix.binary_extension }}
 
       - name: Build (Debug, with embedded ADB)
@@ -209,9 +217,17 @@ jobs:
           cargo build --target ${{ matrix.arch }} --no-default-features
 
       - name: Upload artifact (Debug)
+        if: matrix.embed_adb == 'false'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}-debug-${{ matrix.embed_adb == 'true' && '' || 'no-embed-adb' }}
+          name: ${{ matrix.artifact_name }}-debug-no-embedded-adb
+          path: target/${{ matrix.arch }}/debug/mbf_bridge${{ matrix.binary_extension }}
+
+      - name: Upload artifact (Debug, Embedded ADB)
+        if: matrix.embed_adb == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}-debug}
           path: target/${{ matrix.arch }}/debug/mbf_bridge${{ matrix.binary_extension }}
 
   lipo:
@@ -221,7 +237,7 @@ jobs:
     strategy:
       matrix:
         build_type: ["release", "debug"]
-        embed_adb: ["true", "false"]
+        suffix: ["", "-no-embed-adb"]
 
     steps:
       - name: Checkout
@@ -235,8 +251,8 @@ jobs:
       - name: Create universal binary
         run: |
           lipo -create -output ModsBeforeFriday.app/Contents/MacOS/mbf-bridge \
-            "target/mbf-bridge-macos-intel-${{ matrix.build_type }}/mbf_bridge" \
-            "target/mbf-bridge-macos-arm-${{ matrix.build_type }}/mbf_bridge"
+            "target/mbf-bridge-macos-intel-${{ matrix.build_type }}-${{ matrix.suffix }}/mbf_bridge" \
+            "target/mbf-bridge-macos-arm-${{ matrix.build_type }}-${{ matrix.suffix }}/mbf_bridge"
           chmod +x ModsBeforeFriday.app/Contents/MacOS/mbf-bridge
 
       - name: Prepare macOS app bundle
@@ -247,6 +263,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mbf-bridge-macos-universal-${{ matrix.build_type }}-${{ matrix.embed_adb == 'true' && '' || 'no-embed-adb' }}
+          name: mbf-bridge-macos-universal-${{ matrix.build_type }}${{ matrix.suffix }}
           path: build
 
