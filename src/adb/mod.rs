@@ -172,15 +172,11 @@ pub async fn adb_connect_or_start() -> tokio::io::Result<TcpStream> {
         }
     }
 
-    // If no embedded/bundled ADB is available, give up here.
-    if !embedded_adb_available() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "no-embedded-adb",
-        ));
-    }
-
     // Fallback extraction logic depending on the operating system.
+    // Each platform block returns on success; all fall through to the final Err
+    // when the feature is disabled, the platform is unsupported, or (on macOS)
+    // the app is sandboxed.
+
     #[cfg(all(windows, feature = "embed-adb"))]
     {
         let adb_path = extract_adb_binaries_windows().await.unwrap();
@@ -196,16 +192,17 @@ pub async fn adb_connect_or_start() -> tokio::io::Result<TcpStream> {
     }
 
     #[cfg(all(target_os = "macos", feature = "embed-adb"))]
-    {
-        // On macOS, assume ADB is located alongside the executable.
+    if !is_macos_sandboxed() {
         let adb_exe = env::current_exe().unwrap().parent().unwrap().join("adb");
         adb_start(adb_exe.to_str().unwrap()).await.unwrap();
         return adb_connect_retry().await;
     }
 
-    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
-    return Err(std::io::Error::new(
+    // No ADB binary could be started (feature disabled, unsupported platform,
+    // or macOS sandbox).  The caller is responsible for notifying the user.
+    #[allow(unreachable_code)]
+    Err(std::io::Error::new(
         std::io::ErrorKind::Other,
-        "ADB connection failed",
-    ));
+        "no-embedded-adb",
+    ))
 }

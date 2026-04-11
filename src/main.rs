@@ -348,7 +348,7 @@ fn create_shift_window(
         app,
         "shift",
         tauri::WebviewUrl::CustomProtocol(
-            url::Url::parse("mbfshift://localhost/").unwrap(),
+            url::Url::parse("mbf://localhost/shift").unwrap(),
         ),
     )
     .initialization_script(&init_script)
@@ -419,20 +419,15 @@ fn main() {
 
     let builder = tauri::Builder::default()
         .manage(AdbBridge::new())
-        // Serve the embedded test page at mbftest://localhost/
-        .register_uri_scheme_protocol("mbftest", |_app, _req| {
+        // Serve the embedded React SPA at mbf://localhost/<path>.
+        // vite-plugin-singlefile produces a single self-contained index.html,
+        // so every path returns the same file and React Router handles routing
+        // client-side (/test → TestPage, /shift → ShiftPage).
+        .register_uri_scheme_protocol("mbf", |_app, _req| {
             tauri::http::Response::builder()
                 .header("Content-Type", "text/html; charset=utf-8")
                 .status(200)
-                .body(include_bytes!("../test/index.html").to_vec())
-                .unwrap()
-        })
-        // Serve the launch-options page at mbfshift://localhost/
-        .register_uri_scheme_protocol("mbfshift", |_app, _req| {
-            tauri::http::Response::builder()
-                .header("Content-Type", "text/html; charset=utf-8")
-                .status(200)
-                .body(include_bytes!("shift_launch.html").to_vec())
+                .body(include_bytes!("../ui/dist/index.html").to_vec())
                 .unwrap()
         })
         .setup(move |app| {
@@ -454,7 +449,7 @@ fn main() {
 
                     let url = if ARGS.test {
                         tauri::WebviewUrl::CustomProtocol(
-                            url::Url::parse("mbftest://localhost/").unwrap(),
+                            url::Url::parse("mbf://localhost/test").unwrap(),
                         )
                     } else {
                         url::Url::parse(&browser_url)

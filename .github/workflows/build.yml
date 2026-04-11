@@ -66,6 +66,17 @@ jobs:
             ${{ matrix.os }}-${{ matrix.arch }}-embed=${{ matrix.embed_adb }}-cargo-
             ${{ matrix.os }}-${{ matrix.arch }}-cargo-
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm install
+        working-directory: ui
+
       - name: Install Rust toolchain
         run: rustup target add ${{ matrix.arch }}
 
