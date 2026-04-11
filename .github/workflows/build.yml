@@ -61,7 +61,7 @@ jobs:
           path: |
             ~/.cargo/
             target/
-          key: ${{ matrix.os }}-${{ matrix.arch }}-embed=${{ matrix.embed_adb }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ matrix.os }}-${{ matrix.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ matrix.os }}-${{ matrix.arch }}-embed=${{ matrix.embed_adb }}-cargo-
             ${{ matrix.os }}-${{ matrix.arch }}-cargo-
