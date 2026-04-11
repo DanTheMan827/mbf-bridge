@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ModsBeforeFriday Bridge – Launch Options</title>
+  <style>
+    /* ------------------------------------------------------------------ */
+    /* Design tokens – light mode default                                   */
+    /* ------------------------------------------------------------------ */
+    :root {
+      --bg:            #ffffff;
+      --surface:       #f4f4f5;
+      --surface-hover: #e4e4e7;
+      --border:        #d4d4d8;
+      --text:          #18181b;
+      --subtext:       #71717a;
+      --accent:        #2563eb;
+      --accent-hover:  #1d4ed8;
+      --accent-text:   #ffffff;
+      --error:         #dc2626;
+      --success:       #16a34a;
+      --mono: "SF Mono", "Fira Code", "Cascadia Code", "Consolas", monospace;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Dark mode overrides                                                  */
+    /* ------------------------------------------------------------------ */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:            #09090b;
+        --surface:       #18181b;
+        --surface-hover: #27272a;
+        --border:        #3f3f46;
+        --text:          #f4f4f5;
+        --subtext:       #a1a1aa;
+        --accent:        #3b82f6;
+        --accent-hover:  #60a5fa;
+        --accent-text:   #ffffff;
+        --error:         #f87171;
+        --success:       #4ade80;
+        --shadow: 0 1px 3px rgba(0,0,0,.4), 0 1px 2px rgba(0,0,0,.3);
+      }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Base reset & layout                                                  */
+    /* ------------------------------------------------------------------ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      padding: 1.25rem 1.5rem 1.5rem;
+      min-height: 100%;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Header                                                               */
+    /* ------------------------------------------------------------------ */
+    header {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+    }
+
+    .app-icon {
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 6px;
+      flex-shrink: 0;
+      background: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .app-icon svg {
+      width: 1.25rem;
+      height: 1.25rem;
+      fill: white;
+    }
+
+    .header-text h1 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      line-height: 1.25;
+    }
+
+    .header-text p {
+      font-size: 0.8rem;
+      color: var(--subtext);
+      margin-top: 0.2rem;
+    }
+
+    kbd {
+      display: inline-block;
+      padding: 0.1em 0.4em;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: 0.75em;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      white-space: nowrap;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Section cards                                                        */
+    /* ------------------------------------------------------------------ */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      padding: 0.6rem 0.875rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-hover);
+    }
+
+    .card-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--subtext);
+    }
+
+    .card-body {
+      padding: 0.875rem;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Help text pre block                                                  */
+    /* ------------------------------------------------------------------ */
+    .help-scroll {
+      max-height: 220px;
+      overflow-y: auto;
+      border-radius: calc(var(--radius) - 2px);
+    }
+
+    pre#help-text {
+      font-family: var(--mono);
+      font-size: 0.775rem;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--text);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Args input row                                                       */
+    /* ------------------------------------------------------------------ */
+    .args-row {
+      display: flex;
+      gap: 0.625rem;
+      align-items: flex-start;
+    }
+
+    #args-input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) - 2px);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 0.825rem;
+      line-height: 1.5;
+      padding: 0.5rem 0.75rem;
+      resize: vertical;
+      min-height: 2.4rem;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    #args-input::placeholder {
+      color: var(--subtext);
+      opacity: 0.7;
+    }
+
+    #args-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Launch button                                                        */
+    /* ------------------------------------------------------------------ */
+    #launch-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: var(--accent);
+      border: none;
+      border-radius: calc(var(--radius) - 2px);
+      color: var(--accent-text);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.875rem;
+      font-weight: 600;
+      padding: 0.5rem 1.1rem;
+      white-space: nowrap;
+      transition: background 0.15s, opacity 0.15s;
+      flex-shrink: 0;
+    }
+
+    #launch-btn:hover:not(:disabled) {
+      background: var(--accent-hover);
+    }
+
+    #launch-btn:active:not(:disabled) {
+      opacity: 0.85;
+    }
+
+    #launch-btn:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+
+    #launch-btn svg {
+      width: 0.9rem;
+      height: 0.9rem;
+      fill: currentColor;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Status line                                                          */
+    /* ------------------------------------------------------------------ */
+    #status {
+      margin-top: 0.5rem;
+      font-size: 0.775rem;
+      min-height: 1.1em;
+      color: var(--subtext);
+      transition: color 0.15s;
+    }
+
+    #status.error   { color: var(--error); }
+    #status.success { color: var(--success); }
+
+    /* ------------------------------------------------------------------ */
+    /* Footer hint                                                          */
+    /* ------------------------------------------------------------------ */
+    .hint {
+      font-size: 0.75rem;
+      color: var(--subtext);
+      text-align: center;
+      margin-top: auto;
+      padding-top: 0.25rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="app-icon" aria-hidden="true">
+      <!-- Simple "play" / launch icon -->
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M8 5v14l11-7z"/>
+      </svg>
+    </div>
+    <div class="header-text">
+      <h1>ModsBeforeFriday Bridge</h1>
+      <p>Hold <kbd id="modifier-key-name">Shift</kbd> at startup to open this window.</p>
+    </div>
+  </header>
+
+  <!-- Help text -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Available Arguments</span>
+    </div>
+    <div class="card-body">
+      <div class="help-scroll">
+        <pre id="help-text">Loading…</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom args + launch -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Custom Arguments</span>
+    </div>
+    <div class="card-body">
+      <div class="args-row">
+        <textarea
+          id="args-input"
+          rows="2"
+          placeholder="e.g. --url https://example.com --dev --adb-port 5038"
+          spellcheck="false"
+          autocorrect="off"
+          autocapitalize="off"
+        ></textarea>
+        <button id="launch-btn">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+          Launch
+        </button>
+      </div>
+      <div id="status"></div>
+    </div>
+  </div>
+
+  <p class="hint">Arguments are saved automatically and recalled on next open. Press <kbd>Ctrl+Enter</kbd> to launch.</p>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var STORAGE_KEY = "mbf-bridge-launch-args";
+      var tauri = window.__TAURI__;
+      var invoke = tauri ? tauri.core.invoke : null;
+
+      // Set the modifier key name injected by Rust.
+      var modifierKey = typeof window.__mbfModifierKey === "string"
+        ? window.__mbfModifierKey
+        : "Shift";
+      document.getElementById("modifier-key-name").textContent = modifierKey;
+
+      var input   = document.getElementById("args-input");
+      var btn     = document.getElementById("launch-btn");
+      var status  = document.getElementById("status");
+      var helpPre = document.getElementById("help-text");
+
+      // ── Recall saved args ──────────────────────────────────────────────
+      try {
+        input.value = localStorage.getItem(STORAGE_KEY) || "";
+      } catch (_) {}
+
+      // ── Load help text via Tauri IPC ───────────────────────────────────
+      if (invoke) {
+        invoke("get_help_text")
+          .then(function (text) {
+            helpPre.textContent = text;
+          })
+          .catch(function (e) {
+            helpPre.textContent = "(failed to load help: " + e + ")";
+          });
+      } else {
+        helpPre.textContent = "(Tauri IPC not available)";
+      }
+
+      // ── Launch handler ─────────────────────────────────────────────────
+      function doLaunch() {
+        if (!invoke || btn.disabled) return;
+
+        var args = input.value;
+
+        // Persist before launching so the value is saved even if the
+        // process exits immediately.
+        try {
+          localStorage.setItem(STORAGE_KEY, args);
+        } catch (_) {}
+
+        btn.disabled = true;
+        setStatus("Launching\u2026", "");   // "Launching…"
+
+        invoke("launch_with_args", { args: args })
+          .catch(function (e) {
+            btn.disabled = false;
+            setStatus("Error: " + e, "error");
+          });
+      }
+
+      btn.addEventListener("click", doLaunch);
+
+      // Ctrl+Enter / Cmd+Enter as keyboard shortcut.
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          doLaunch();
+        }
+      });
+
+      function setStatus(msg, cls) {
+        status.textContent = msg;
+        status.className   = cls;
+      }
+    })();
+  </script>
+
+</body>
+</html>

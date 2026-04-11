@@ -201,6 +201,18 @@
           "markdownDescription": "Allows writing raw bytes to an open ADB connection."
         },
         {
+          "description": "Allows retrieving the application help text. Restricted to the shift-launch window.",
+          "type": "string",
+          "const": "allow-get-help-text",
+          "markdownDescription": "Allows retrieving the application help text. Restricted to the shift-launch window."
+        },
+        {
+          "description": "Allows re-launching the application with custom arguments. Restricted to the shift-launch window.",
+          "type": "string",
+          "const": "allow-launch-with-args",
+          "markdownDescription": "Allows re-launching the application with custom arguments. Restricted to the shift-launch window."
+        },
+        {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
           "type": "string",
           "const": "core:default",

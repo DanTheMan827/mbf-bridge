@@ -63,6 +63,105 @@ pub struct AdbBridge {
     connections: Arc<tokio::sync::Mutex<std::collections::HashMap<String, ConnectionState>>>,
 }
 
+/// Returns `true` when `winget` is available in the current environment.
+#[cfg(windows)]
+fn is_winget_available() -> bool {
+    use std::os::windows::process::CommandExt;
+    std::process::Command::new("winget")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Handles the "no embedded ADB" error case.
+///
+/// On Windows, if `winget` is available the user is offered the choice to
+/// install Google Platform Tools (`winget install --id Google.PlatformTools`).
+/// If installation succeeds and ADB starts, the live `TcpStream` is returned.
+///
+/// On every other platform (or when the user declines / winget is absent) a
+/// modal error dialog is shown and `None` is returned.
+#[cfg(not(target_os = "android"))]
+async fn handle_no_adb() -> Option<tokio::net::TcpStream> {
+    use rfd::{MessageButtons, MessageDialog, MessageLevel};
+
+    // ── Windows: offer to install via winget ────────────────────────────
+    #[cfg(windows)]
+    if is_winget_available() {
+        use rfd::MessageDialogResult;
+        let wants_install = tokio::task::spawn_blocking(|| {
+            MessageDialog::new()
+                .set_title("Install ADB?")
+                .set_description(
+                    "ADB (Android Debug Bridge) is required but could not be started.\n\n\
+                    Would you like to install Google Platform Tools (ADB) \
+                    using Windows Package Manager (winget)?",
+                )
+                .set_level(MessageLevel::Warning)
+                .set_buttons(MessageButtons::YesNo)
+                .show()
+                == MessageDialogResult::Yes
+        })
+        .await
+        .unwrap_or(false);
+
+        if !wants_install {
+            // User explicitly declined – respect the choice and return.
+            return None;
+        }
+
+        let installed = tokio::task::spawn_blocking(|| {
+            std::process::Command::new("winget")
+                .args(&[
+                    "install",
+                    "--id",
+                    "Google.PlatformTools",
+                    "--accept-package-agreements",
+                    "--accept-source-agreements",
+                ])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        })
+        .await
+        .unwrap_or(false);
+
+        if installed {
+            if crate::adb::adb_start("adb").await.is_ok() {
+                if let Ok(stream) = crate::adb::adb_connect_retry().await {
+                    return Some(stream);
+                }
+            }
+        }
+        // Installation failed or ADB still unreachable – fall through to
+        // the generic error dialog below.
+    }
+
+    // ── Generic fallback: ask the user to install ADB manually ──────────
+    tokio::task::spawn_blocking(|| {
+        MessageDialog::new()
+            .set_title("ADB Not Available")
+            .set_description(
+                "ADB could not be started automatically.\n\n\
+                Please install ADB (Android Debug Bridge) and ensure it is \
+                in your PATH, or start the ADB server manually before \
+                launching this application.\n\n\
+                Download: https://developer.android.com/studio/releases/platform-tools",
+            )
+            .set_level(MessageLevel::Error)
+            .set_buttons(MessageButtons::Ok)
+            .show();
+    })
+    .await
+    .ok();
+
+    None
+}
+
 impl AdbBridge {
     pub fn new() -> Self {
         Self::default()
@@ -77,7 +176,6 @@ impl AdbBridge {
     /// Events are emitted only to the `window` that requested the connection,
     /// keeping multiple windows isolated from each other.
     pub async fn connect(&self, id: String, window: WebviewWindow) -> Result<(), String> {
-        use crate::adb::adb_connect_or_start;
         use tokio::io::AsyncReadExt;
 
         let connections = self.connections.clone();
@@ -86,73 +184,28 @@ impl AdbBridge {
         let semaphore_clone = semaphore.clone();
 
         tauri::async_runtime::spawn(async move {
-            match adb_connect_or_start().await {
-                Ok(stream) => {
-                    let (mut reader, writer) = stream.into_split();
-
-                    // Insert before emitting so the write path is ready.
-                    connections.lock().await.insert(
-                        id.clone(),
-                        ConnectionState {
-                            writer,
-                            flow_semaphore: semaphore_clone.clone(),
-                            close_tx,
-                        },
-                    );
-
-                    let _ = window.emit(
-                        "adb-connected",
-                        AdbConnectedPayload {
-                            id: id.clone(),
-                            success: true,
-                        },
-                    );
-
-                    let mut buf = vec![0u8; READ_BUFFER_SIZE];
-                    let mut close_rx = close_rx;
-
-                    loop {
-                        // ---- acquire a flow-control permit ----
-                        // Blocks when JS has not yet acknowledged FLOW_WINDOW chunks,
-                        // applying back-pressure on the ADB socket.
-                        let permit = tokio::select! {
-                            p = semaphore_clone.acquire() => match p {
-                                Ok(p) => p,
-                                // Semaphore closed by adb_close – stop reading.
-                                Err(_) => break,
-                            },
-                            // Cooperative shutdown signal.
-                            _ = close_rx.changed() => break,
-                        };
-                        // Permit is released manually via adb_ack, not on drop.
-                        permit.forget();
-
-                        // ---- read next chunk ----
-                        let n = tokio::select! {
-                            result = reader.read(&mut buf) => match result {
-                                Ok(0) | Err(_) => break,
-                                Ok(n) => n,
-                            },
-                            _ = close_rx.changed() => break,
-                        };
-
-                        let _ = window.emit(
-                            "adb-data",
-                            AdbDataPayload {
-                                id: id.clone(),
-                                data: buf[..n].to_vec(),
-                            },
-                        );
+            // Attempt to acquire an ADB stream.  On Windows, when no embedded
+            // ADB is available, `handle_no_adb` may offer a winget install and
+            // return a live stream on success.
+            let stream = match crate::adb::adb_connect_or_start().await {
+                Ok(s) => Some(s),
+                Err(e) if e.to_string() == "no-embedded-adb" => {
+                    #[cfg(not(target_os = "android"))]
+                    {
+                        handle_no_adb().await
                     }
-
-                    // Emit adb-closed only when the connection was not
-                    // already removed by an explicit adb_close call.
-                    let was_active = connections.lock().await.remove(&id).is_some();
-                    if was_active {
-                        let _ = window.emit("adb-closed", AdbClosedPayload { id });
+                    #[cfg(target_os = "android")]
+                    {
+                        let _ = e;
+                        None
                     }
                 }
-                Err(_) => {
+                Err(_) => None,
+            };
+
+            let stream = match stream {
+                Some(s) => s,
+                None => {
                     let _ = window.emit(
                         "adb-connected",
                         AdbConnectedPayload {
@@ -160,7 +213,72 @@ impl AdbBridge {
                             success: false,
                         },
                     );
+                    return;
                 }
+            };
+
+            let (mut reader, writer) = stream.into_split();
+
+            // Insert before emitting so the write path is ready.
+            connections.lock().await.insert(
+                id.clone(),
+                ConnectionState {
+                    writer,
+                    flow_semaphore: semaphore_clone.clone(),
+                    close_tx,
+                },
+            );
+
+            let _ = window.emit(
+                "adb-connected",
+                AdbConnectedPayload {
+                    id: id.clone(),
+                    success: true,
+                },
+            );
+
+            let mut buf = vec![0u8; READ_BUFFER_SIZE];
+            let mut close_rx = close_rx;
+
+            loop {
+                // ---- acquire a flow-control permit ----
+                // Blocks when JS has not yet acknowledged FLOW_WINDOW chunks,
+                // applying back-pressure on the ADB socket.
+                let permit = tokio::select! {
+                    p = semaphore_clone.acquire() => match p {
+                        Ok(p) => p,
+                        // Semaphore closed by adb_close – stop reading.
+                        Err(_) => break,
+                    },
+                    // Cooperative shutdown signal.
+                    _ = close_rx.changed() => break,
+                };
+                // Permit is released manually via adb_ack, not on drop.
+                permit.forget();
+
+                // ---- read next chunk ----
+                let n = tokio::select! {
+                    result = reader.read(&mut buf) => match result {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => n,
+                    },
+                    _ = close_rx.changed() => break,
+                };
+
+                let _ = window.emit(
+                    "adb-data",
+                    AdbDataPayload {
+                        id: id.clone(),
+                        data: buf[..n].to_vec(),
+                    },
+                );
+            }
+
+            // Emit adb-closed only when the connection was not already removed
+            // by an explicit adb_close call.
+            let was_active = connections.lock().await.remove(&id).is_some();
+            if was_active {
+                let _ = window.emit("adb-closed", AdbClosedPayload { id });
             }
         });
 
@@ -203,3 +321,4 @@ impl AdbBridge {
         }
     }
 }
+

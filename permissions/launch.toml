@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-get-help-text"
+description = "Allows retrieving the application help text. Restricted to the shift-launch window."
+commands.allow = ["get_help_text"]
+
+[[permission]]
+identifier = "allow-launch-with-args"
+description = "Allows re-launching the application with custom arguments. Restricted to the shift-launch window."
+commands.allow = ["launch_with_args"]

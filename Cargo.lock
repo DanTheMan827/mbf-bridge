@@ -1981,6 +1981,7 @@ dependencies = [
  "openssl",
  "rfd",
  "serde",
+ "shlex",
  "single-instance",
  "tauri",
  "tauri-build",

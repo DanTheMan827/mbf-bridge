@@ -7,6 +7,35 @@ use tokio::net::TcpStream;
 
 pub static ADB_PORT: OnceLock<u16> = OnceLock::new();
 
+/// Returns `true` when an embedded (or bundled) ADB binary is available to
+/// start the ADB server automatically.
+///
+/// This is `true` only when:
+///  - the `embed-adb` Cargo feature is enabled, **and**
+///  - the current platform has an embedded/bundled binary (Windows, Linux,
+///    or macOS with the binary placed next to the executable), **and**
+///  - the app is not running inside the macOS sandbox (sandboxed apps cannot
+///    launch helper processes).
+pub fn embedded_adb_available() -> bool {
+    if !cfg!(feature = "embed-adb") {
+        return false;
+    }
+
+    #[cfg(target_os = "macos")]
+    if is_macos_sandboxed() {
+        return false;
+    }
+
+    // Platforms with an embedded/bundled ADB binary.
+    cfg!(any(windows, target_os = "linux", target_os = "macos"))
+}
+
+/// Returns `true` when the macOS App Sandbox is active for this process.
+#[cfg(target_os = "macos")]
+pub fn is_macos_sandboxed() -> bool {
+    std::env::var("APP_SANDBOX_CONTAINER_ID").is_ok()
+}
+
 /// Starts the ADB server using the provided executable path.
 ///
 /// This function spawns the ADB server with arguments `server nodaemon` and the environment variable
@@ -72,7 +101,7 @@ pub async fn adb_connect_retry() -> tokio::io::Result<TcpStream> {
 /// Extracts ADB binaries for Windows into a temporary subfolder and returns the path to the ADB executable.
 ///
 /// The subfolder is named with a randomly generated UUID (using v4 as a placeholder for v7).
-#[cfg(windows)]
+#[cfg(all(windows, feature = "embed-adb"))]
 pub async fn extract_adb_binaries_windows() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     use tokio::fs::{create_dir_all, write};
     use uuid::Uuid;
@@ -99,7 +128,7 @@ pub async fn extract_adb_binaries_windows() -> Result<std::path::PathBuf, Box<dy
 /// Extracts ADB binaries for Linux into a temporary subfolder and returns the path to the ADB executable.
 ///
 /// The subfolder is named with a randomly generated UUID (using v4 as a placeholder for v7).
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "embed-adb"))]
 pub async fn extract_adb_binaries_linux() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     use tokio::fs::{create_dir_all, write};
     use uuid::Uuid;
@@ -118,8 +147,14 @@ pub async fn extract_adb_binaries_linux() -> Result<std::path::PathBuf, Box<dyn 
 
 /// Ensures a connection to the ADB server, starting it if necessary.
 ///
-/// On Windows and Linux, if ADB is not running, the binaries are extracted into a temporary
-/// subfolder (named with a random UUID) and then started.
+/// On Windows and Linux (when the `embed-adb` feature is enabled), if ADB is
+/// not running the binaries are extracted into a temporary subfolder and then
+/// started.  On macOS (when `embed-adb` is enabled and the app is not
+/// sandboxed) the bundled `adb` binary located next to the executable is used.
+///
+/// When the `embed-adb` feature is disabled, or when running inside the macOS
+/// sandbox, only the system-installed `adb` is attempted.  If that also fails
+/// an `Err` is returned so the caller can inform the user to install ADB.
 ///
 /// # Returns
 ///
@@ -130,27 +165,37 @@ pub async fn adb_connect_or_start() -> tokio::io::Result<TcpStream> {
         return Ok(stream);
     }
 
-    // Attempt to start ADB normally using system-installed "adb".
+    // Attempt to start ADB using the system-installed binary.
     if adb_start("adb").await.is_ok() {
-        return adb_connect_retry().await;
+        if let Ok(stream) = adb_connect_retry().await {
+            return Ok(stream);
+        }
+    }
+
+    // If no embedded/bundled ADB is available, give up here.
+    if !embedded_adb_available() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "no-embedded-adb",
+        ));
     }
 
     // Fallback extraction logic depending on the operating system.
-    #[cfg(windows)]
+    #[cfg(all(windows, feature = "embed-adb"))]
     {
         let adb_path = extract_adb_binaries_windows().await.unwrap();
         adb_start(adb_path.to_str().unwrap()).await.unwrap();
         return adb_connect_retry().await;
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", feature = "embed-adb"))]
     {
         let adb_path = extract_adb_binaries_linux().await.unwrap();
         adb_start(adb_path.to_str().unwrap()).await.unwrap();
         return adb_connect_retry().await;
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", feature = "embed-adb"))]
     {
         // On macOS, assume ADB is located alongside the executable.
         let adb_exe = env::current_exe().unwrap().parent().unwrap().join("adb");
