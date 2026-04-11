@@ -1,0 +1,19 @@
+[[permission]]
+identifier = "allow-adb-connect"
+description = "Allows opening a new ADB connection via the Tauri IPC bridge."
+commands.allow = ["adb_connect"]
+
+[[permission]]
+identifier = "allow-adb-write"
+description = "Allows writing raw bytes to an open ADB connection."
+commands.allow = ["adb_write"]
+
+[[permission]]
+identifier = "allow-adb-ack"
+description = "Allows acknowledging receipt of an ADB data chunk, restoring one flow-control permit."
+commands.allow = ["adb_ack"]
+
+[[permission]]
+identifier = "allow-adb-close"
+description = "Allows closing an ADB connection."
+commands.allow = ["adb_close"]

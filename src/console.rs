@@ -25,21 +25,18 @@
 #[cfg(windows)]
 pub fn allocate_console() -> bool {
     use std::io::{self, Write};
+    use std::ptr::null_mut;
     use winapi::um::consoleapi::AllocConsole;
     use winapi::um::fileapi::CreateFileW;
     use winapi::um::handleapi::INVALID_HANDLE_VALUE;
-    use winapi::um::winbase::{STD_OUTPUT_HANDLE, STD_ERROR_HANDLE};
-    use winapi::um::winnt::GENERIC_READ;
-    use winapi::um::winnt::GENERIC_WRITE;
     use winapi::um::processenv::SetStdHandle;
-    use std::ptr::null_mut;
-
-    use crate::eprint_message;
+    use winapi::um::winbase::{STD_ERROR_HANDLE, STD_OUTPUT_HANDLE};
+    use winapi::um::winnt::{GENERIC_READ, GENERIC_WRITE};
 
     unsafe {
         // Allocate a new console
         if AllocConsole() == 0 {
-            eprint_message("Failed to allocate console");
+            eprintln!("Failed to allocate console");
             return false;
         }
 
@@ -59,7 +56,7 @@ pub fn allocate_console() -> bool {
             SetStdHandle(STD_ERROR_HANDLE, stdout_handle);
             let _ = io::stdout().flush(); // Ensure stdout is flushed
         } else {
-            eprint_message("Failed to redirect stdout");
+            eprintln!("Failed to redirect stdout");
         }
     }
 

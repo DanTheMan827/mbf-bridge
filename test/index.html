@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MBF Bridge – Test Page</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --border: #2e3146;
+    --accent: #5b8af5;
+    --green: #4caf6e;
+    --red: #e05c5c;
+    --yellow: #e0a84d;
+    --text: #d4d8f0;
+    --subtext: #7a80a0;
+    --mono: "Fira Code", "Cascadia Code", "Consolas", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 1.5rem;
+    min-height: 100vh;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.05rem; margin-bottom: 0.75rem; color: var(--subtext); font-weight: 500; }
+  h3 { font-size: 0.9rem; margin-bottom: 0.5rem; text-transform: uppercase;
+       letter-spacing: 0.06em; color: var(--subtext); }
+
+  /* Status banner */
+  #banner {
+    padding: 0.6rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1.25rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+  #banner.ok  { background: #1a2e22; border: 1px solid var(--green); color: var(--green); }
+  #banner.err { background: #2a1a1a; border: 1px solid var(--red);   color: var(--red);   }
+  #banner.warn{ background: #2a2419; border: 1px solid var(--yellow); color: var(--yellow);}
+
+  /* Card layout */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+  }
+
+  button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  button:hover  { opacity: .85; }
+  button:active { opacity: .7; }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+  button.danger { background: var(--red); }
+  button.secondary { background: transparent; border: 1px solid var(--border);
+                     color: var(--text); }
+
+  .btn-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+
+  /* Log / hex pane */
+  .log {
+    background: #11131c;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    line-height: 1.5;
+    padding: 0.6rem;
+    height: 220px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .log .ts   { color: var(--subtext); user-select: none; }
+  .log .tx   { color: #6ec6e0; }
+  .log .rx   { color: #a8e6b0; }
+  .log .info { color: var(--text); }
+  .log .warn { color: var(--yellow); }
+  .log .err  { color: var(--red); }
+
+  /* Connection item */
+  .conn-item {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.82rem;
+  }
+  .conn-item:last-child { border-bottom: none; }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  .dot.open   { background: var(--green); }
+  .dot.closed { background: var(--subtext); }
+  .conn-id { color: var(--subtext); font-family: var(--mono); font-size: 0.7rem;
+             flex: 1; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Flow-control meter */
+  .meter { display: flex; gap: 4px; margin-top: 0.4rem; }
+  .meter-cell {
+    width: 18px; height: 18px; border-radius: 3px;
+    background: var(--border);
+    transition: background .2s;
+  }
+  .meter-cell.filled { background: var(--accent); }
+  .meter-label { font-size: 0.72rem; color: var(--subtext); margin-top: 0.3rem; }
+
+  /* Stat grid */
+  .stat-row { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.5rem; }
+  .stat { text-align: center; }
+  .stat .num { font-size: 1.4rem; font-weight: 700; }
+  .stat .lbl { font-size: 0.7rem; color: var(--subtext); }
+
+  #version-result { margin-top: 0.5rem; font-size: 0.85rem; min-height: 1.2em; }
+  #global-log-wrap h3 { margin-top: 1rem; }
+</style>
+</head>
+<body>
+
+<h1>MBF Bridge – Test Page</h1>
+<h2>Tauri 2 ADB IPC bridge validation</h2>
+
+<div id="banner" class="warn">Checking bridge availability…</div>
+
+<div class="grid">
+
+  <!-- ── Connection panel ── -->
+  <div class="card">
+    <h3>Connections</h3>
+    <div class="btn-row">
+      <button id="btn-connect"  disabled>New connection</button>
+      <button id="btn-close-all" class="danger" disabled>Close all</button>
+    </div>
+    <div id="conn-list" style="min-height:3rem;"></div>
+  </div>
+
+  <!-- ── ADB version test ── -->
+  <div class="card">
+    <h3>ADB Version Test</h3>
+    <p style="font-size:.82rem;color:var(--subtext);margin-bottom:.75rem;">
+      Sends <code>host:version</code> to the ADB server and parses the reply.
+    </p>
+    <div class="btn-row">
+      <button id="btn-version" disabled>Run test</button>
+    </div>
+    <div id="version-result">–</div>
+  </div>
+
+  <!-- ── Multi-connection test ── -->
+  <div class="card">
+    <h3>Multi-Connection Test</h3>
+    <p style="font-size:.82rem;color:var(--subtext);margin-bottom:.75rem;">
+      Opens N connections simultaneously, runs the version test on each,
+      verifies that all succeed independently.
+    </p>
+    <div class="btn-row">
+      <button id="btn-multi" disabled>Run (3 connections)</button>
+    </div>
+    <div id="multi-result" style="font-size:.82rem;margin-top:.5rem;">–</div>
+  </div>
+
+  <!-- ── Flow-control / back-pressure test ── -->
+  <div class="card">
+    <h3>Back-Pressure Test</h3>
+    <p style="font-size:.82rem;color:var(--subtext);margin-bottom:.75rem;">
+      Streams ADB <code>host:devices-l</code> with an artificial 150 ms delay
+      per chunk.  The meter below shows in-flight permits (should stay ≤ 8).
+    </p>
+    <div class="btn-row">
+      <button id="btn-backpressure" disabled>Run test</button>
+    </div>
+    <div class="meter" id="flow-meter">
+      <!-- 8 cells rendered by JS -->
+    </div>
+    <div class="meter-label" id="flow-label">In-flight: 0 / 8</div>
+    <div class="stat-row">
+      <div class="stat"><div class="num" id="stat-chunks">0</div><div class="lbl">Chunks</div></div>
+      <div class="stat"><div class="num" id="stat-bytes">0</div><div class="lbl">Bytes</div></div>
+      <div class="stat"><div class="num" id="stat-max">0</div><div class="lbl">Max in-flight</div></div>
+    </div>
+  </div>
+
+</div><!-- /grid -->
+
+<!-- ── Global event log ── -->
+<div id="global-log-wrap" class="card" style="margin-top:1rem;">
+  <h3>Event Log</h3>
+  <div class="btn-row" style="margin-top:.5rem;">
+    <button class="secondary" id="btn-clear-log">Clear</button>
+  </div>
+  <div class="log" id="global-log"></div>
+</div>
+
+<script>
+"use strict";
+
+// ---------------------------------------------------------------------------
+// Tiny logger
+// ---------------------------------------------------------------------------
+var logEl = document.getElementById("global-log");
+
+function logLine(cls, msg) {
+  var ts = new Date().toTimeString().slice(0, 8);
+  var line = document.createElement("div");
+  line.innerHTML =
+    '<span class="ts">[' + ts + ']</span> ' +
+    '<span class="' + cls + '">' + escHtml(msg) + "</span>";
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function bytesToHex(buf) {
+  return Array.from(buf)
+    .map(function (b) { return b.toString(16).padStart(2, "0"); })
+    .join(" ");
+}
+
+function hexDump(buf) {
+  var max = 64;
+  var slice = buf.slice(0, max);
+  var hex = bytesToHex(slice);
+  if (buf.length > max) hex += " … (" + buf.length + " bytes total)";
+  return hex;
+}
+
+// ---------------------------------------------------------------------------
+// Banner helpers
+// ---------------------------------------------------------------------------
+var bannerEl = document.getElementById("banner");
+
+function setBanner(cls, msg) {
+  bannerEl.className = cls;
+  bannerEl.textContent = msg;
+}
+
+// ---------------------------------------------------------------------------
+// Flow-control meter (8 cells)
+// ---------------------------------------------------------------------------
+var WINDOW_SIZE = 8;
+var meterEl = document.getElementById("flow-meter");
+var flowLabelEl = document.getElementById("flow-label");
+var inFlight = 0;
+var maxInFlight = 0;
+
+for (var i = 0; i < WINDOW_SIZE; i++) {
+  var cell = document.createElement("div");
+  cell.className = "meter-cell";
+  cell.id = "mc-" + i;
+  meterEl.appendChild(cell);
+}
+
+function updateMeter(val) {
+  inFlight = val;
+  if (val > maxInFlight) {
+    maxInFlight = val;
+    document.getElementById("stat-max").textContent = maxInFlight;
+  }
+  flowLabelEl.textContent = "In-flight: " + val + " / " + WINDOW_SIZE;
+  for (var j = 0; j < WINDOW_SIZE; j++) {
+    document.getElementById("mc-" + j).className =
+      "meter-cell" + (j < val ? " filled" : "");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Connection list
+// ---------------------------------------------------------------------------
+var connections = new Map(); // id → { conn, listItem }
+var connListEl = document.getElementById("conn-list");
+
+function renderConnItem(id, conn) {
+  var item = document.createElement("div");
+  item.className = "conn-item";
+  item.id = "ci-" + id;
+
+  var dot = document.createElement("div");
+  dot.className = "dot open";
+
+  var label = document.createElement("span");
+  label.className = "conn-id";
+  label.textContent = id.slice(0, 8) + "…";
+  label.title = id;
+
+  var closeBtn = document.createElement("button");
+  closeBtn.className = "danger";
+  closeBtn.style.padding = "0.2rem 0.6rem";
+  closeBtn.style.fontSize = "0.75rem";
+  closeBtn.textContent = "Close";
+  closeBtn.addEventListener("click", function () {
+    conn.close();
+  });
+
+  item.appendChild(dot);
+  item.appendChild(label);
+  item.appendChild(closeBtn);
+  connListEl.appendChild(item);
+  return { dot: dot, closeBtn: closeBtn };
+}
+
+function markConnClosed(id) {
+  var entry = connections.get(id);
+  if (!entry) return;
+  entry.listItem.dot.className = "dot closed";
+  entry.listItem.closeBtn.disabled = true;
+  connections.delete(id);
+  updateButtons();
+}
+
+// ---------------------------------------------------------------------------
+// Button state
+// ---------------------------------------------------------------------------
+var btnConnect     = document.getElementById("btn-connect");
+var btnCloseAll    = document.getElementById("btn-close-all");
+var btnVersion     = document.getElementById("btn-version");
+var btnMulti       = document.getElementById("btn-multi");
+var btnBackpressure= document.getElementById("btn-backpressure");
+
+function updateButtons() {
+  var hasConns = connections.size > 0;
+  btnCloseAll.disabled = !hasConns;
+}
+
+// ---------------------------------------------------------------------------
+// ADB protocol helpers
+// ---------------------------------------------------------------------------
+var enc = new TextEncoder();
+var dec = new TextDecoder();
+
+/**
+ * ADB host protocol message: 4-hex-digit length prefix + body.
+ */
+function adbMsg(body) {
+  var len = body.length.toString(16).padStart(4, "0").toUpperCase();
+  return enc.encode(len + body);
+}
+
+/**
+ * Accumulate chunks until `pred(accumulated)` returns true, then resolve.
+ */
+function readUntil(conn, pred, timeout) {
+  return new Promise(function (resolve, reject) {
+    var buf = new Uint8Array(0);
+    var timer = setTimeout(function () {
+      unlisten();
+      reject(new Error("Timeout waiting for ADB response"));
+    }, timeout || 5000);
+
+    var unlisten = conn.onData(function (chunk) {
+      var merged = new Uint8Array(buf.length + chunk.length);
+      merged.set(buf);
+      merged.set(chunk, buf.length);
+      buf = merged;
+      if (pred(buf)) {
+        clearTimeout(timer);
+        unlisten();
+        resolve(buf);
+      }
+    });
+  });
+}
+
+/**
+ * Send a single ADB host-service request and return the response bytes.
+ */
+async function adbRequest(conn, service) {
+  var msg = adbMsg(service);
+  logLine("tx", "→ [" + service + "] " + hexDump(msg));
+
+  // Register the data listener BEFORE writing so the response cannot arrive
+  // (and be discarded) before readUntil has a chance to register its onData.
+  var headerPromise = readUntil(conn, function (b) { return b.length >= 8; });
+  await conn.write(msg);
+
+  // Need at least OKAY(4) + len(4) + data
+  var resp = await headerPromise;
+  var status = dec.decode(resp.slice(0, 4));
+  if (status !== "OKAY") {
+    throw new Error("ADB replied: " + status + " – " + dec.decode(resp.slice(4)));
+  }
+  var dataLen = parseInt(dec.decode(resp.slice(4, 8)), 16);
+
+  // If the full payload hasn't arrived yet, read exactly the remaining bytes
+  // and append them to what we already have.
+  var needed = 8 + dataLen - resp.length;
+  if (needed > 0) {
+    var more = await readUntil(conn, function (b) { return b.length >= needed; });
+    var combined = new Uint8Array(resp.length + more.length);
+    combined.set(resp);
+    combined.set(more, resp.length);
+    resp = combined;
+  }
+  return resp.slice(8, 8 + dataLen);
+}
+
+// ---------------------------------------------------------------------------
+// Bridge initialisation
+// ---------------------------------------------------------------------------
+var bridge = null;
+
+async function init() {
+  if (!window.__mbfBridge) {
+    setBanner("err", "❌  window.__mbfBridge is not defined – page must be loaded inside the Tauri WebView.");
+    logLine("err", "Bridge not available.  Load this page via --test flag.");
+    return;
+  }
+
+  bridge = window.__mbfBridge;
+
+  if (!bridge.isAdbAvailable) {
+    setBanner("warn", "⚠️  isAdbAvailable is false – check adbd is running on the target device.");
+    logLine("warn", "isAdbAvailable = false");
+  } else {
+    setBanner("ok", "✅  Bridge available – ADB commands enabled.");
+    logLine("info", "isAdbAvailable = " + bridge.isAdbAvailable);
+  }
+
+  // Enable all test buttons
+  btnConnect.disabled      = false;
+  btnVersion.disabled      = !bridge.isAdbAvailable;
+  btnMulti.disabled        = !bridge.isAdbAvailable;
+  btnBackpressure.disabled = !bridge.isAdbAvailable;
+}
+
+// ---------------------------------------------------------------------------
+// New connection
+// ---------------------------------------------------------------------------
+btnConnect.addEventListener("click", async function () {
+  logLine("info", "Connecting…");
+  try {
+    var conn = await bridge.connect();
+    logLine("info", "Connected: " + conn.id);
+
+    var listItem = renderConnItem(conn.id, conn);
+    connections.set(conn.id, { conn: conn, listItem: listItem });
+    updateButtons();
+
+    conn.onData(function (data) {
+      logLine("rx", "← [" + conn.id.slice(0, 8) + "…] " + hexDump(data));
+    });
+    conn.onClose(function () {
+      logLine("info", "Closed: " + conn.id.slice(0, 8) + "…");
+      markConnClosed(conn.id);
+    });
+  } catch (e) {
+    logLine("err", "connect() failed: " + e.message);
+    setBanner("err", "❌  " + e.message);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Close all
+// ---------------------------------------------------------------------------
+btnCloseAll.addEventListener("click", function () {
+  connections.forEach(function (entry) { entry.conn.close(); });
+});
+
+// ---------------------------------------------------------------------------
+// ADB version test
+// ---------------------------------------------------------------------------
+btnVersion.addEventListener("click", async function () {
+  btnVersion.disabled = true;
+  document.getElementById("version-result").textContent = "Running…";
+  logLine("info", "--- ADB Version Test ---");
+  try {
+    var conn = await bridge.connect();
+    logLine("info", "Connection opened: " + conn.id.slice(0, 8) + "…");
+
+    var payload = await adbRequest(conn, "host:version");
+    var version = parseInt(dec.decode(payload), 16);
+    var msg = "ADB server version: " + version + " (0x" + version.toString(16) + ")";
+    document.getElementById("version-result").textContent = "✅ " + msg;
+    logLine("info", msg);
+
+    await conn.close();
+    logLine("info", "Connection closed cleanly.");
+  } catch (e) {
+    document.getElementById("version-result").textContent = "❌ " + e.message;
+    logLine("err", "Version test failed: " + e.message);
+  }
+  btnVersion.disabled = false;
+});
+
+// ---------------------------------------------------------------------------
+// Multi-connection test
+// ---------------------------------------------------------------------------
+btnMulti.addEventListener("click", async function () {
+  btnMulti.disabled = true;
+  var resultEl = document.getElementById("multi-result");
+  resultEl.textContent = "Running…";
+  logLine("info", "--- Multi-Connection Test (3 simultaneous) ---");
+
+  var N = 3;
+  try {
+    var results = await Promise.all(
+      Array.from({ length: N }, async function (_, i) {
+        var conn = await bridge.connect();
+        logLine("info", "[" + i + "] Opened " + conn.id.slice(0, 8) + "…");
+        var payload = await adbRequest(conn, "host:version");
+        var version = parseInt(dec.decode(payload), 16);
+        logLine("info", "[" + i + "] version=" + version);
+        await conn.close();
+        return version;
+      })
+    );
+
+    var allSame = results.every(function (v) { return v === results[0]; });
+    resultEl.textContent =
+      "✅ All " + N + " connections reported version " + results[0] +
+      (allSame ? "" : " – WARNING: mismatch! " + JSON.stringify(results));
+    logLine("info", "All connections closed cleanly.");
+  } catch (e) {
+    resultEl.textContent = "❌ " + e.message;
+    logLine("err", "Multi-connection test failed: " + e.message);
+  }
+  btnMulti.disabled = false;
+});
+
+// ---------------------------------------------------------------------------
+// Back-pressure / flow-control test
+// ---------------------------------------------------------------------------
+btnBackpressure.addEventListener("click", async function () {
+  btnBackpressure.disabled = true;
+  document.getElementById("stat-chunks").textContent = "0";
+  document.getElementById("stat-bytes").textContent  = "0";
+  document.getElementById("stat-max").textContent    = "0";
+  maxInFlight = 0;
+  updateMeter(0);
+  logLine("info", "--- Back-Pressure Test ---");
+  logLine("info", "onData callback will sleep 150 ms per chunk to stress flow control.");
+
+  var chunkCount = 0;
+  var byteCount  = 0;
+
+  try {
+    var conn = await bridge.connect();
+    logLine("info", "Opened " + conn.id.slice(0, 8) + "…");
+
+    // Wrap the default onData to track in-flight via the meter.
+    // Each call to onData is already acknowledged AFTER the callback returns,
+    // so sleeping here really does stall the Rust read loop.
+    var unlisten = conn.onData(async function (data) {
+      inFlight++;
+      updateMeter(inFlight);
+      chunkCount++;
+      byteCount += data.length;
+      document.getElementById("stat-chunks").textContent = chunkCount;
+      document.getElementById("stat-bytes").textContent  = byteCount;
+      logLine("rx", "chunk #" + chunkCount + " (" + data.length + " B) – sleeping 150 ms");
+      await new Promise(function (r) { setTimeout(r, 150); });
+      inFlight--;
+      updateMeter(inFlight);
+    });
+
+    conn.onClose(function () {
+      logLine("info", "Connection closed after back-pressure test.");
+      markConnClosed(conn.id);
+      unlisten();
+    });
+
+    // Send host:devices-l (short response, but exercises the full pipeline).
+    var payload = await adbRequest(conn, "host:devices-l");
+    logLine("rx", "devices-l: " + dec.decode(payload).trim());
+
+    await conn.close();
+    logLine("info", "Back-pressure test complete. Max in-flight permits used: " + maxInFlight);
+    if (maxInFlight <= WINDOW_SIZE) {
+      logLine("info", "✅ Flow control respected (max " + maxInFlight + " ≤ " + WINDOW_SIZE + ")");
+    } else {
+      logLine("warn", "⚠️  Flow control exceeded window (" + maxInFlight + " > " + WINDOW_SIZE + ")");
+    }
+  } catch (e) {
+    logLine("err", "Back-pressure test failed: " + e.message);
+  }
+
+  btnBackpressure.disabled = false;
+});
+
+// ---------------------------------------------------------------------------
+// Clear log
+// ---------------------------------------------------------------------------
+document.getElementById("btn-clear-log").addEventListener("click", function () {
+  logEl.textContent = "";
+});
+
+// ---------------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------------
+init().catch(function (e) {
+  setBanner("err", "Init error: " + e.message);
+  logLine("err", e.message);
+});
+</script>
+</body>
+</html>

@@ -158,6 +158,7 @@ pub async fn adb_connect_or_start() -> tokio::io::Result<TcpStream> {
         return adb_connect_retry().await;
     }
 
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     return Err(std::io::Error::new(
         std::io::ErrorKind::Other,
         "ADB connection failed",
