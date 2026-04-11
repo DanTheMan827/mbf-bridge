@@ -166,6 +166,7 @@ jobs:
           lipo -create -output ModsBeforeFriday.app/Contents/MacOS/mbf-bridge \
             target/mbf-bridge-macos-intel-${{ matrix.build_type }}/mbf_bridge \
             target/mbf-bridge-macos-arm-${{ matrix.build_type }}/mbf_bridge
+          chmod +x ModsBeforeFriday.app/Contents/MacOS/mbf-bridge
 
       - name: Prepare macOS app bundle
         run: |
