@@ -26,7 +26,7 @@ use urlencoding::encode as url_encode;
 #[cfg(not(target_os = "android"))]
 use single_instance::SingleInstance;
 
-#[cfg(desktop)]
+#[cfg(not(target_os = "android"))]
 use rfd::FileDialog;
 
 // ---------------------------------------------------------------------------
