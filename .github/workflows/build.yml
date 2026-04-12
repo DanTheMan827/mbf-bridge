@@ -251,8 +251,8 @@ jobs:
       - name: Create universal binary
         run: |
           lipo -create -output ModsBeforeFriday.app/Contents/MacOS/mbf-bridge \
-            "target/mbf-bridge-macos-intel-${{ matrix.build_type }}-${{ matrix.suffix }}/mbf_bridge" \
-            "target/mbf-bridge-macos-arm-${{ matrix.build_type }}-${{ matrix.suffix }}/mbf_bridge"
+            "target/mbf-bridge-macos-intel-${{ matrix.build_type }}${{ matrix.suffix }}/mbf_bridge" \
+            "target/mbf-bridge-macos-arm-${{ matrix.build_type }}${{ matrix.suffix }}/mbf_bridge"
           chmod +x ModsBeforeFriday.app/Contents/MacOS/mbf-bridge
 
       - name: Prepare macOS app bundle
