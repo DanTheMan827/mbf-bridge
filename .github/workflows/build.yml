@@ -25,75 +25,31 @@ jobs:
             arch: i686-pc-windows-msvc
             artifact_name: "mbf-bridge-windows-x86"
             binary_extension: ".exe"
-            embed_adb: "false"
-
-          - os: windows-latest
-            arch: i686-pc-windows-msvc
-            artifact_name: "mbf-bridge-windows-x86"
-            binary_extension: ".exe"
-            embed_adb: "true"
 
           - os: windows-latest
             arch: x86_64-pc-windows-msvc
             artifact_name: "mbf-bridge-windows-x64"
             binary_extension: ".exe"
-            embed_adb: "false"
-
-          - os: windows-latest
-            arch: x86_64-pc-windows-msvc
-            artifact_name: "mbf-bridge-windows-x64"
-            binary_extension: ".exe"
-            embed_adb: "true"
 
           - os: ubuntu-latest
             arch: x86_64-unknown-linux-gnu
             artifact_name: "mbf-bridge-linux-x64"
-            embed_adb: "false"
-
-          - os: ubuntu-latest
-            arch: x86_64-unknown-linux-gnu
-            artifact_name: "mbf-bridge-linux-x64"
-            embed_adb: "true"
 
           - os: ubuntu-latest
             arch: aarch64-linux-android
             artifact_name: "mbf-bridge-android-aarch64"
-            embed_adb: "false"
-
-          - os: ubuntu-latest
-            arch: aarch64-linux-android
-            artifact_name: "mbf-bridge-android-aarch64"
-            embed_adb: "true"
 
           - os: ubuntu-latest
             arch: x86_64-linux-android
             artifact_name: "mbf-bridge-android-x86_64"
-            embed_adb: "false"
-
-          - os: ubuntu-latest
-            arch: x86_64-linux-android
-            artifact_name: "mbf-bridge-android-x86_64"
-            embed_adb: "true"
 
           - os: macos-latest
             arch: x86_64-apple-darwin
             artifact_name: "mbf-bridge-macos-intel"
-            embed_adb: "false"
-
-          - os: macos-latest
-            arch: x86_64-apple-darwin
-            artifact_name: "mbf-bridge-macos-intel"
-            embed_adb: "true"
 
           - os: macos-latest
             arch: aarch64-apple-darwin
             artifact_name: "mbf-bridge-macos-arm"
-            embed_adb: "false"
-
-          - os: macos-latest
-            arch: aarch64-apple-darwin
-            artifact_name: "mbf-bridge-macos-arm"
-            embed_adb: "true"
 
     steps:
       - name: Checkout
@@ -106,7 +62,6 @@ jobs:
             target/
           key: ${{ matrix.os }}-${{ matrix.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ matrix.os }}-${{ matrix.arch }}-embed=${{ matrix.embed_adb }}-cargo-
             ${{ matrix.os }}-${{ matrix.arch }}-cargo-
 
       - name: Set up Node.js
@@ -178,67 +133,62 @@ jobs:
           ar = "${{ env.ANDROID_NDK_ROOT }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
           linker = "${{ env.ANDROID_NDK_ROOT }}/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android31-clang"' > /home/runner/.cargo/config.toml
 
-      - name: Build (Release, with embedded ADB)
-        if: matrix.embed_adb == 'true'
-        shell: bash
-        run: |
-          cargo build --release --target ${{ matrix.arch }}
-
       - name: Build (Release, without embedded ADB)
-        if: matrix.embed_adb == 'false'
+        if: matrix.os != 'macos-latest'
         shell: bash
         run: |
           cargo build --release --target ${{ matrix.arch }} --no-default-features
 
-      - name: Upload artifact (Release)
-        if: matrix.embed_adb == 'false'
+      - name: Upload artifact (Release, without embedded ADB)
+        if: matrix.os != 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}-release-no-embedded-adb
           path: target/${{ matrix.arch }}/release/mbf_bridge${{ matrix.binary_extension }}
 
-      - name: Upload artifact (Release, Embedded ADB)
-        if: matrix.embed_adb == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact_name }}-release}
-          path: target/${{ matrix.arch }}/release/mbf_bridge${{ matrix.binary_extension }}
-
-      - name: Build (Debug, with embedded ADB)
-        if: matrix.embed_adb == 'true'
+      - name: Build (Release, with embedded ADB)
         shell: bash
         run: |
-          cargo build --target ${{ matrix.arch }}
+          cargo build --release --target ${{ matrix.arch }}
+
+      - name: Upload artifact (Release, Embedded ADB)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}-release
+          path: target/${{ matrix.arch }}/release/mbf_bridge${{ matrix.binary_extension }}
 
       - name: Build (Debug, without embedded ADB)
-        if: matrix.embed_adb == 'false'
+        if: matrix.os != 'macos-latest'
         shell: bash
         run: |
           cargo build --target ${{ matrix.arch }} --no-default-features
 
-      - name: Upload artifact (Debug)
-        if: matrix.embed_adb == 'false'
+      - name: Upload artifact (Debug, without embedded ADB)
+        if: matrix.os != 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}-debug-no-embedded-adb
           path: target/${{ matrix.arch }}/debug/mbf_bridge${{ matrix.binary_extension }}
 
+      - name: Build (Debug, with embedded ADB)
+        shell: bash
+        run: |
+          cargo build --target ${{ matrix.arch }}
+
       - name: Upload artifact (Debug, Embedded ADB)
-        if: matrix.embed_adb == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}-debug}
+          name: ${{ matrix.artifact_name }}-debug
           path: target/${{ matrix.arch }}/debug/mbf_bridge${{ matrix.binary_extension }}
 
   lipo:
-    name: "Create macOS universal binary (${{ matrix.build_type }}, embed-adb=${{ matrix.embed_adb }})"
+    name: "Create macOS universal binary (${{ matrix.build_type }})"
     runs-on: macos-latest
     needs: build
     strategy:
       matrix:
         build_type: ["release", "debug"]
-        suffix: ["", "-no-embed-adb"]
-
+  
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -251,8 +201,8 @@ jobs:
       - name: Create universal binary
         run: |
           lipo -create -output ModsBeforeFriday.app/Contents/MacOS/mbf-bridge \
-            "target/mbf-bridge-macos-intel-${{ matrix.build_type }}${{ matrix.suffix }}/mbf_bridge" \
-            "target/mbf-bridge-macos-arm-${{ matrix.build_type }}${{ matrix.suffix }}/mbf_bridge"
+            "target/mbf-bridge-macos-intel-${{ matrix.build_type }}/mbf_bridge" \
+            "target/mbf-bridge-macos-arm-${{ matrix.build_type }}/mbf_bridge"
           chmod +x ModsBeforeFriday.app/Contents/MacOS/mbf-bridge
 
       - name: Prepare macOS app bundle
@@ -263,6 +213,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mbf-bridge-macos-universal-${{ matrix.build_type }}${{ matrix.suffix }}
+          name: mbf-bridge-macos-universal-${{ matrix.build_type }}
           path: build
-
