@@ -3,9 +3,16 @@ fn main() {
     // `include_bytes!("../ui/dist/index.html")` resolves correctly.
     let ui_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ui");
 
+    // On Windows the npm wrapper is `npm.cmd`; on Unix it is plain `npm`.
+    let npm = if cfg!(target_os = "windows") {
+        "npm.cmd"
+    } else {
+        "npm"
+    };
+
     // Install Node dependencies if they are missing.
     if !ui_dir.join("node_modules").exists() {
-        let status = std::process::Command::new("npm")
+        let status = std::process::Command::new(npm)
             .arg("install")
             .current_dir(&ui_dir)
             .status()
@@ -14,7 +21,7 @@ fn main() {
     }
 
     // Build the frontend bundle.
-    let status = std::process::Command::new("npm")
+    let status = std::process::Command::new(npm)
         .args(["run", "build"])
         .current_dir(&ui_dir)
         .status()
