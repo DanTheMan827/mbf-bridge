@@ -1,6 +1,9 @@
 /* ============================================================
-   MBF Bridge – Shared Design System
-   Light/dark mode via CSS custom properties + media queries.
+   MBF Bridge – Global CSS tokens and resets
+   These rules must remain in the global scope (they target
+   :root, element selectors, and pseudo-elements rather than
+   class names).  Reusable class primitives live in
+   shared.module.css and are imported as CSS Modules.
    ============================================================ */
 
 /* ── Light mode (default) ─────────────────────────────────── */
@@ -75,106 +78,6 @@ body {
   font-size: 15px;
   line-height: 1.5;
 }
-
-/* ── Reusable primitives ───────────────────────────────────── */
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  overflow: hidden;
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  padding: 0.55rem 0.875rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-2);
-}
-
-.card-title {
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--subtext);
-}
-
-.card-body {
-  padding: 0.875rem;
-}
-
-/* Buttons */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  background: var(--accent);
-  border: none;
-  border-radius: calc(var(--radius) - 2px);
-  color: var(--accent-text);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 0.82rem;
-  font-weight: 600;
-  padding: 0.38rem 0.85rem;
-  transition: background 0.15s, opacity 0.15s;
-  white-space: nowrap;
-}
-
-.btn:hover:not(:disabled)  { background: var(--accent-hover); }
-.btn:active:not(:disabled) { opacity: 0.8; }
-.btn:disabled              { opacity: 0.4; cursor: not-allowed; }
-
-.btn.danger    { background: var(--red); }
-.btn.secondary {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text);
-}
-.btn.secondary:hover:not(:disabled) { background: var(--surface-2); }
-
-.btn-row {
-  display: flex;
-  gap: 0.45rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.75rem;
-}
-
-/* Log pane */
-.log {
-  background: var(--log-bg);
-  border: 1px solid var(--border);
-  border-radius: calc(var(--radius) - 2px);
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  line-height: 1.55;
-  padding: 0.6rem 0.7rem;
-  height: 220px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-.log .ts   { color: var(--subtext); user-select: none; }
-.log .tx   { color: var(--log-tx); }
-.log .rx   { color: var(--log-rx); }
-.log .info { color: var(--log-info); }
-.log .warn { color: var(--log-warn); }
-.log .err  { color: var(--log-err); }
-
-/* Status / banner */
-.banner {
-  padding: 0.55rem 1rem;
-  border-radius: var(--radius);
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-.banner.ok   { background: color-mix(in srgb, var(--green)  12%, var(--surface)); border: 1px solid var(--green);  color: var(--green);  }
-.banner.err  { background: color-mix(in srgb, var(--red)    12%, var(--surface)); border: 1px solid var(--red);    color: var(--red);    }
-.banner.warn { background: color-mix(in srgb, var(--yellow) 12%, var(--surface)); border: 1px solid var(--yellow); color: var(--yellow); }
 
 /* Keyboard key indicator */
 kbd {

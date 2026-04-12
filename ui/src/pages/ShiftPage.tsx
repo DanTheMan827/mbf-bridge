@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import shared from "../styles/shared.module.css";
+import styles from "./ShiftPage.module.css";
 
 const STORAGE_KEY = "mbf-bridge-launch-args";
 
@@ -70,15 +72,7 @@ export default function ShiftPage() {
   );
 
   return (
-    <div
-      style={{
-        padding: "1.25rem 1.5rem 1.5rem",
-        minHeight: "100%",
-        display: "flex",
-        flexDirection: "column",
-        gap: "1rem",
-      }}
-    >
+    <div className={styles.page}>
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <header style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
         <div
@@ -116,11 +110,11 @@ export default function ShiftPage() {
       </header>
 
       {/* ── Help text ───────────────────────────────────────────────────── */}
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">Available Arguments</span>
+      <div className={shared.card}>
+        <div className={shared.cardHeader}>
+          <span className={shared.cardTitle}>Available Arguments</span>
         </div>
-        <div className="card-body">
+        <div className={shared.cardBody}>
           <div
             style={{
               maxHeight: 220,
@@ -144,11 +138,11 @@ export default function ShiftPage() {
       </div>
 
       {/* ── Custom args + launch ─────────────────────────────────────────── */}
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">Custom Arguments</span>
+      <div className={shared.card}>
+        <div className={shared.cardHeader}>
+          <span className={shared.cardTitle}>Custom Arguments</span>
         </div>
-        <div className="card-body">
+        <div className={shared.cardBody}>
           <div style={{ display: "flex", gap: "0.625rem", alignItems: "flex-start" }}>
             <textarea
               ref={textareaRef}
@@ -186,7 +180,7 @@ export default function ShiftPage() {
               }}
             />
             <button
-              className="btn"
+              className={shared.btn}
               style={{ flexShrink: 0 }}
               disabled={!invoke || launching}
               onClick={doLaunch}

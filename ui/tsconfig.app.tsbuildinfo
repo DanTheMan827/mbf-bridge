@@ -1,1 +1,1 @@
-{"root":["./src/App.tsx","./src/main.tsx","./src/connector/MbfAdbServerConnector.ts","./src/hooks/useDeviceScanner.ts","./src/hooks/useLog.ts","./src/pages/ShiftPage.tsx","./src/pages/TestPage.tsx","./src/types/global.d.ts"],"version":"5.9.3"}
+{"root":["./src/App.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/connector/MbfAdbServerConnector.ts","./src/hooks/useDeviceScanner.ts","./src/hooks/useLog.ts","./src/pages/ShiftPage.tsx","./src/pages/TestPage.tsx","./src/types/global.d.ts"],"version":"5.9.3"}

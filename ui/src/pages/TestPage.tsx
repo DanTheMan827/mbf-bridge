@@ -8,6 +8,8 @@ import type { AdbServerClient } from "@yume-chan/adb";
 import type { AdbConnection } from "../types/global";
 import { useLog, type LogClass } from "../hooks/useLog";
 import { useDeviceScanner } from "../hooks/useDeviceScanner";
+import shared from "../styles/shared.module.css";
+import styles from "./TestPage.module.css";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -144,11 +146,11 @@ function LogPane({ entries }: LogPaneProps) {
   }, [entries]);
 
   return (
-    <div className="log" ref={ref}>
+    <div className={shared.log} ref={ref}>
       {entries.map((e) => (
         <div key={e.id}>
-          <span className="ts">[{e.ts}] </span>
-          <span className={e.cls}>{e.msg}</span>
+          <span className={shared.ts}>[{e.ts}] </span>
+          <span className={shared[e.cls]}>{e.msg}</span>
         </div>
       ))}
     </div>
@@ -197,9 +199,9 @@ function DevicesCard({ enabled }: DevicesCardProps) {
   const badge = statusBadge();
 
   return (
-    <div className="card">
-      <div className="card-header" style={{ gap: "0.5rem" }}>
-        <span className="card-title" style={{ flex: 1 }}>
+    <div className={shared.card}>
+      <div className={shared.cardHeader} style={{ gap: "0.5rem" }}>
+        <span className={shared.cardTitle} style={{ flex: 1 }}>
           Live Devices
         </span>
         <span
@@ -216,7 +218,7 @@ function DevicesCard({ enabled }: DevicesCardProps) {
           {badge.text}
         </span>
       </div>
-      <div className="card-body">
+      <div className={shared.cardBody}>
         {error && (
           <div
             style={{
@@ -548,15 +550,7 @@ export default function TestPage() {
   }
 
   return (
-    <div
-      style={{
-        padding: "1.5rem",
-        minHeight: "100%",
-        display: "flex",
-        flexDirection: "column",
-        gap: "1rem",
-      }}
-    >
+    <div className={styles.page}>
       <div>
         <h1 style={{ fontSize: "1.4rem", marginBottom: "0.2rem" }}>
           MBF Bridge – Test Page
@@ -572,35 +566,29 @@ export default function TestPage() {
         </h2>
       </div>
 
-      <div className={`banner ${bannerCls}`}>{bannerMsg}</div>
+      <div className={`${shared.banner} ${shared[bannerCls]}`}>{bannerMsg}</div>
 
       {/* ── Two-column grid ───────────────────────────────────────────── */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
-          gap: "1rem",
-        }}
-      >
+      <div className={styles.grid}>
         {/* Live device scanner */}
         <DevicesCard enabled={isAdbAvailable} />
 
         {/* Connections */}
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Connections</span>
+        <div className={shared.card}>
+          <div className={shared.cardHeader}>
+            <span className={shared.cardTitle}>Connections</span>
           </div>
-          <div className="card-body">
-            <div className="btn-row">
+          <div className={shared.cardBody}>
+            <div className={shared.btnRow}>
               <button
-                className="btn"
+                className={shared.btn}
                 disabled={!isBridgeAvailable}
                 onClick={openConnection}
               >
                 New connection
               </button>
               <button
-                className="btn danger"
+                className={`${shared.btn} ${shared.danger}`}
                 disabled={!hasOpenConns}
                 onClick={closeAll}
               >
@@ -645,7 +633,7 @@ export default function TestPage() {
                     {id.slice(0, 8)}…
                   </span>
                   <button
-                    className="btn danger"
+                    className={`${shared.btn} ${shared.danger}`}
                     style={{ padding: "0.2rem 0.55rem", fontSize: "0.75rem" }}
                     disabled={!entry.open}
                     onClick={() => entry.conn.close()}
@@ -659,11 +647,11 @@ export default function TestPage() {
         </div>
 
         {/* ADB version test */}
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">ADB Version Test</span>
+        <div className={shared.card}>
+          <div className={shared.cardHeader}>
+            <span className={shared.cardTitle}>ADB Version Test</span>
           </div>
-          <div className="card-body">
+          <div className={shared.cardBody}>
             <p
               style={{
                 fontSize: "0.82rem",
@@ -674,9 +662,9 @@ export default function TestPage() {
               Sends <code>host:version</code> to the ADB server and parses the
               reply.
             </p>
-            <div className="btn-row">
+            <div className={shared.btnRow}>
               <button
-                className="btn"
+                className={shared.btn}
                 disabled={!isAdbAvailable || versionRunning}
                 onClick={runVersionTest}
               >
@@ -696,11 +684,11 @@ export default function TestPage() {
         </div>
 
         {/* Multi-connection test */}
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Multi-Connection Test</span>
+        <div className={shared.card}>
+          <div className={shared.cardHeader}>
+            <span className={shared.cardTitle}>Multi-Connection Test</span>
           </div>
-          <div className="card-body">
+          <div className={shared.cardBody}>
             <p
               style={{
                 fontSize: "0.82rem",
@@ -711,9 +699,9 @@ export default function TestPage() {
               Opens 3 connections simultaneously, runs the version test on each,
               verifies all succeed independently.
             </p>
-            <div className="btn-row">
+            <div className={shared.btnRow}>
               <button
-                className="btn"
+                className={shared.btn}
                 disabled={!isAdbAvailable || multiRunning}
                 onClick={runMultiTest}
               >
@@ -733,11 +721,11 @@ export default function TestPage() {
         </div>
 
         {/* Back-pressure test */}
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Back-Pressure Test</span>
+        <div className={shared.card}>
+          <div className={shared.cardHeader}>
+            <span className={shared.cardTitle}>Back-Pressure Test</span>
           </div>
-          <div className="card-body">
+          <div className={shared.cardBody}>
             <p
               style={{
                 fontSize: "0.82rem",
@@ -749,9 +737,9 @@ export default function TestPage() {
               delay per chunk. The meter shows in-flight permits (should stay ≤
               8).
             </p>
-            <div className="btn-row">
+            <div className={shared.btnRow}>
               <button
-                className="btn"
+                className={shared.btn}
                 disabled={!isAdbAvailable || bpRunning}
                 onClick={runBpTest}
               >
@@ -797,13 +785,13 @@ export default function TestPage() {
       </div>
 
       {/* Event log */}
-      <div className="card" style={{ marginTop: "auto" }}>
-        <div className="card-header">
-          <span className="card-title">Event Log</span>
+      <div className={shared.card} style={{ marginTop: "auto" }}>
+        <div className={shared.cardHeader}>
+          <span className={shared.cardTitle}>Event Log</span>
         </div>
-        <div className="card-body">
-          <div className="btn-row" style={{ marginBottom: "0.5rem" }}>
-            <button className="btn secondary" onClick={clearLog}>
+        <div className={shared.cardBody}>
+          <div className={shared.btnRow} style={{ marginBottom: "0.5rem" }}>
+            <button className={`${shared.btn} ${shared.secondary}`} onClick={clearLog}>
               Clear
             </button>
           </div>
