@@ -16,7 +16,7 @@
   overflow: hidden;
 }
 
-.card-header {
+.cardHeader {
   display: flex;
   align-items: center;
   padding: 0.55rem 0.875rem;
@@ -24,7 +24,7 @@
   background: var(--surface-2);
 }
 
-.card-title {
+.cardTitle {
   font-size: 0.68rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -32,7 +32,7 @@
   color: var(--subtext);
 }
 
-.card-body {
+.cardBody {
   padding: 0.875rem;
 }
 
@@ -68,7 +68,7 @@
 }
 .btn.secondary:hover:not(:disabled) { background: var(--surface-2); }
 
-.btn-row {
+.btnRow {
   display: flex;
   gap: 0.45rem;
   flex-wrap: wrap;
