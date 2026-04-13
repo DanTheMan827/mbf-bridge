@@ -435,7 +435,7 @@ fn main() {
 
     unsafe {
         #[cfg(windows)]
-        let _ = SetCurrentProcessExplicitAppUserModelID(windows::core::w!("YourApp.Id"));
+        let _ = SetCurrentProcessExplicitAppUserModelID(windows::core::w!("com.DanTheMan827.mbf-bridge"));
     }
 
     // Windows: allocate a console in release builds when --console is passed.
