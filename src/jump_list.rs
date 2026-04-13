@@ -16,11 +16,12 @@ mod imp {
         CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
     };
     use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
-    use windows::Win32::System::Variant::VARENUM;
     use windows::Win32::UI::Shell::{
-        ICustomDestinationList, IObjectArray, IObjectCollection, IShellLinkW,
+        ICustomDestinationList, IShellLinkW,
+        Common::{IObjectArray, IObjectCollection},
     };
-    use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, PROPERTYKEY};
+    use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
+    use windows::Win32::Foundation::PROPERTYKEY;
 
     // CLSIDs from the Windows SDK.
     // CLSID_DestinationList            = {77f10cf0-3db5-4966-b520-b7c54fd35ed6}
@@ -51,19 +52,10 @@ mod imp {
     /// The `BSTR` is an owned, reference-counted string allocated by the COM
     /// runtime, so `IPropertyStore::SetValue` always receives a valid pointer
     /// regardless of when it makes its internal copy.
+    #[allow(unsafe_op_in_unsafe_fn)]
     fn prop_variant_bstr(s: &str) -> windows::core::Result<PROPVARIANT> {
-        // `BSTR::from` allocates a COM BSTR (owned, null-terminated wide string).
         let bstr = BSTR::from(s);
-        let mut pv = PROPVARIANT::default();
-        // VT_BSTR = 8
-        unsafe {
-            pv.Anonymous.Anonymous.vt = VARENUM(8);
-            // Transfer ownership of the BSTR into the PROPVARIANT.
-            // The PROPVARIANT's destructor (PropVariantClear) will free it.
-            pv.Anonymous.Anonymous.Anonymous.bstrVal =
-                std::mem::ManuallyDrop::new(bstr.into_raw() as *mut u16);
-        }
-        Ok(pv)
+        Ok(PROPVARIANT::from(bstr))
     }
 
     pub fn add_tasks(tasks: &[(&str, &str)]) {
@@ -78,9 +70,10 @@ mod imp {
                 };
 
             let mut slots: u32 = 0;
-            if dest_list.BeginList(&mut slots, &IObjectArray::IID).is_err() {
-                return;
-            }
+            let _: Option<IObjectArray> = match dest_list.BeginList(&mut slots).ok() {
+                Some(arr) => Some(arr),
+                None => return,
+            };
 
             let collection: IObjectCollection = match CoCreateInstance(
                 &CLSID_ENUM_OBJ_COLLECTION,

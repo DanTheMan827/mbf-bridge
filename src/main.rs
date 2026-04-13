@@ -265,70 +265,6 @@ async fn launch_with_args(
                 .find(|w| w[0] == flag)
                 .map(|w| w[1].as_str())
         }
-
-        let url = extract_flag(&parsed, "--url").unwrap_or(DEFAULT_URL);
-        let dev = parsed.iter().any(|a| a == "--dev");
-        let game_id = extract_flag(&parsed, "--game-id").unwrap_or(DEFAULT_GAME_ID);
-
-        // Add a jump list entry whenever the combination differs from defaults.
-        let url_changed     = url     != DEFAULT_URL;
-        let dev_changed     = dev;
-        let game_id_changed = game_id != DEFAULT_GAME_ID;
-
-        if url_changed || dev_changed || game_id_changed {
-            // Build canonical args string from only the three key flags.
-            let mut entry_args: Vec<String> = Vec::new();
-            if url_changed {
-                entry_args.push(format!("--url {}", shlex::try_quote(url).unwrap_or(url.into())));
-            }
-            if dev_changed {
-                entry_args.push("--dev".to_owned());
-            }
-            if game_id_changed {
-                entry_args.push(format!("--game-id {}", shlex::try_quote(game_id).unwrap_or(game_id.into())));
-            }
-            let entry_arg_str = entry_args.join(" ");
-
-            // Build a human-readable title: URL (or default label) + badges.
-            let url_label = if url_changed {
-                // Keep only the host + first path segment for brevity.
-                url::Url::parse(url)
-                    .ok()
-                    .and_then(|u| {
-                        let host = u.host_str().unwrap_or(url).to_owned();
-                        let first_seg = u.path_segments()
-                            .and_then(|mut s| s.next().filter(|p| !p.is_empty()))
-                            .unwrap_or("");
-                        if first_seg.is_empty() {
-                            Some(host)
-                        } else {
-                            Some(format!("{}/{}", host, first_seg))
-                        }
-                    })
-                    .unwrap_or_else(|| url.to_owned())
-            } else {
-                "MBF".to_owned()
-            };
-
-            let mut badges: Vec<&str> = Vec::new();
-            if dev_changed     { badges.push("dev"); }
-            if game_id_changed { badges.push(game_id); }
-
-            let title = if badges.is_empty() {
-                url_label
-            } else {
-                format!("{} [{}]", url_label, badges.join(", "))
-            };
-
-            // Truncate to 60 chars to stay within jump list display limits.
-            let short_title = if title.chars().count() > 60 {
-                format!("{}…", title.chars().take(59).collect::<String>())
-            } else {
-                title
-            };
-
-            jump_list::add_tasks(&[(&short_title, &entry_arg_str)]);
-        }
     }
 
     std::process::Command::new(&exe)
@@ -515,6 +451,70 @@ fn main() {
     let open_shift_window = !ARGS.test && !ARGS.help && is_launch_modifier_held();
 
     let browser_url = build_browser_url();
+    
+    // Add a jump list entry whenever the combination differs from defaults.
+    let url_changed     = ARGS.url     != DEFAULT_URL;
+    let dev_changed     = ARGS.dev_mode;
+    let game_id_changed = ARGS.game_id != DEFAULT_GAME_ID;
+
+    if url_changed || dev_changed || game_id_changed {
+        // Build canonical args string from only the three key flags.
+        let mut entry_args: Vec<String> = Vec::new();
+        if url_changed {
+            if let Ok(url) = shlex::try_quote(&ARGS.url) {
+                entry_args.push(format!("--url {}", url));
+            }
+        }
+        if dev_changed {
+            entry_args.push("--dev".to_owned());
+        }
+        if game_id_changed {
+            if let Ok(game_id) = shlex::try_quote(&ARGS.game_id) {
+            entry_args.push(format!("--game-id {}", game_id));
+            }
+        }
+        let entry_arg_str = entry_args.join(" ");
+
+        // Build a human-readable title: URL (or default label) + badges.
+        let url_label = if url_changed {
+            // Keep only the host + first path segment for brevity.
+            url::Url::parse(&ARGS.url)
+                .ok()
+                .and_then(|u| {
+                    let host = u.host_str().unwrap_or(&ARGS.url).to_owned();
+                    let first_seg = u.path_segments()
+                        .and_then(|mut s| s.next().filter(|p| !p.is_empty()))
+                        .unwrap_or("");
+                    if first_seg.is_empty() {
+                        Some(host)
+                    } else {
+                        Some(format!("{}/{}", host, first_seg))
+                    }
+                })
+                .unwrap_or_else(|| ARGS.url.to_owned())
+        } else {
+            "MBF".to_owned()
+        };
+
+        let mut badges: Vec<&str> = Vec::new();
+        if dev_changed     { badges.push("dev"); }
+        if game_id_changed { badges.push(&ARGS.game_id); }
+
+        let title = if badges.is_empty() {
+            url_label
+        } else {
+            format!("{} [{}]", url_label, badges.join(", "))
+        };
+
+        // Truncate to 60 chars to stay within jump list display limits.
+        let short_title = if title.chars().count() > 60 {
+            format!("{}…", title.chars().take(59).collect::<String>())
+        } else {
+            title
+        };
+
+        jump_list::add_tasks(&[(&short_title, &entry_arg_str)]);
+    }
 
     // Prefix the init script with the ADB-available flag so bridge.js can
     // expose `isAdbAvailable` without an extra IPC round-trip.
@@ -535,7 +535,7 @@ fn main() {
         // The dist/ directory is embedded via `include_dir!` so every file is
         // available.  Unrecognised paths fall back to index.html so that React
         // Router can handle client-side routing (/test, /shift, /help …).
-        .register_uri_scheme_protocol("mbf", |_app, req| serve_embedded(req))
+        .register_uri_scheme_protocol("mbf", |_app, req| serve_embedded(&req))
         .setup(move |app| {
             // macOS: run as an accessory app (no Dock icon).
             #[cfg(target_os = "macos")]

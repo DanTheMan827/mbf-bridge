@@ -34,7 +34,7 @@ open = "5.3.3"
 rfd = "0.17.2"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["consoleapi", "fileapi", "winbase", "processenv", "winuser"] }
+winapi = { version = "0.3", features = ["consoleapi", "fileapi", "winbase", "processenv", "winuser", "handleapi"] }
 winreg = "0.55.0"
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
@@ -42,6 +42,8 @@ windows = { version = "0.62.2", features = [
     "Win32_UI_Shell",
     "Win32_UI_Shell_Common",
     "Win32_UI_Shell_PropertiesSystem",
+    "Win32_System_Variant",
+    "Win32_System_Com_StructuredStorage",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
