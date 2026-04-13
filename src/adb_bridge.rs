@@ -1,6 +1,15 @@
 use serde::Serialize;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tauri::{Emitter, WebviewWindow};
+
+pub static INIT_SCRIPT: LazyLock<String> = LazyLock::new(|| {
+    // Prefix the init script with the ADB-available flag so bridge.js can
+    // expose `isAdbAvailable` without an extra IPC round-trip.
+    format!(
+        "window.__mbfIsAdbAvailable=true;\n{}",
+        include_str!("bridge.js")
+    )
+});
 
 /// Maximum number of unacknowledged chunks in flight from Rust → JS.
 /// When this limit is reached the read loop blocks, propagating back-pressure

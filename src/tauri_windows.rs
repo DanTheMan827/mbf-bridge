@@ -162,7 +162,8 @@ pub fn create_help_window(app: &tauri::App) {
 pub fn create_test_window(app: &tauri::App) {
     let mut config = InternalWindowConfig::default();
     let config = config
-        .set_title("Test");
+        .set_title("Test")
+        .set_init_script(&crate::adb_bridge::INIT_SCRIPT);
 
     let _ = create_internal_window(app, internal_pages::TEST, config);
 }

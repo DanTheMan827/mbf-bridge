@@ -468,12 +468,7 @@ async fn main() {
         jump_list::prepend_task(&short_title, &entry_arg_str);
     }
 
-    // Prefix the init script with the ADB-available flag so bridge.js can
-    // expose `isAdbAvailable` without an extra IPC round-trip.
-    let init_script = format!(
-        "window.__mbfIsAdbAvailable=true;\n{}",
-        include_str!("bridge.js")
-    );
+    
 
     // Human-readable modifier key label injected into the shift-launch page.
     #[cfg(target_os = "macos")]
@@ -516,7 +511,7 @@ async fn main() {
                         .map(tauri::WebviewUrl::External)
                         .map_err(|e| e.to_string())?;
                         
-                    create_app_window(app, url, &init_script)?;
+                    create_app_window(app, url, &crate::adb_bridge::INIT_SCRIPT)?;
                 }
             }
 
