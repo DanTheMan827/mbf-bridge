@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::sync::{Arc, LazyLock};
-use tauri::{Emitter, WebviewWindow};
+use tauri::{Emitter, Manager, WebviewWindow};
 
 pub static INIT_SCRIPT: LazyLock<String> = LazyLock::new(|| {
     // Prefix the init script with the ADB-available flag so bridge.js can
@@ -165,7 +165,6 @@ async fn handle_no_adb(app: &tauri::AppHandle) -> Option<tokio::net::TcpStream> 
             app: tauri::AppHandle,
             reader: impl std::io::Read + Send + 'static,
         ) {
-            use std::io::Read;
             let mut reader = reader;
             let mut buf = [0u8; 4096];
             loop {
@@ -210,7 +209,7 @@ async fn handle_no_adb(app: &tauri::AppHandle) -> Option<tokio::net::TcpStream> 
         }
         // Installation failed or ADB still unreachable.
         // The progress window already displayed the failure; skip the generic dialog.
-        None
+        return None;
     }
 
     // ── Generic fallback: ask the user to install ADB manually ──────────

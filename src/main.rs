@@ -32,6 +32,7 @@ use clap::{CommandFactory, Parser};
 use config::{DEFAULT_GAME_ID, DEFAULT_URL};
 use include_dir::{include_dir, Dir};
 use lazy_static::lazy_static;
+use tauri::Manager;
 use urlencoding::encode as url_encode;
 
 #[cfg(not(target_os = "android"))]
@@ -275,7 +276,7 @@ async fn launch_with_args(
 #[tauri::command]
 fn close_winget_progress_window(app: tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("winget-progress") {
-        let _ = win.destroy();
+        let _ = win.destroy().ok();
     }
 }
 
