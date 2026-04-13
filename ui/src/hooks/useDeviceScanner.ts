@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { AdbServerClient } from "@yume-chan/adb";
 import { MbfAdbServerConnector } from "../connector/MbfAdbServerConnector";
 
@@ -21,8 +21,6 @@ export function useDeviceScanner(enabled: boolean): DeviceScannerState {
   const [devices, setDevices] = useState<AdbServerClient.Device[]>([]);
   const [status, setStatus] = useState<ScannerStatus>("idle");
   const [error, setError] = useState<string | null>(null);
-  // Stable ref so the cleanup closure always has the latest observer.
-  const observerRef = useRef<AdbServerClient.DeviceObserver | null>(null);
 
   useEffect(() => {
     if (!enabled) {
@@ -33,6 +31,8 @@ export function useDeviceScanner(enabled: boolean): DeviceScannerState {
     }
 
     let cancelled = false;
+    // Local variable captured by both the async setup and the cleanup closure.
+    let observer: AdbServerClient.DeviceObserver | null = null;
 
     setStatus("connecting");
     setError(null);
@@ -41,24 +41,24 @@ export function useDeviceScanner(enabled: boolean): DeviceScannerState {
 
     void (async () => {
       try {
-        const observer = await client.trackDevices();
+        const obs = await client.trackDevices();
 
         if (cancelled) {
-          observer.stop();
+          obs.stop();
           return;
         }
 
-        observerRef.current = observer;
+        observer = obs;
 
         // Seed with the initial device list.
-        setDevices([...observer.current]);
+        setDevices([...obs.current]);
         setStatus("tracking");
 
         // Subscribe to future list changes.
-        observer.onListChange((list) => setDevices([...list]));
+        obs.onListChange((list) => setDevices([...list]));
 
         // Surface ADB server errors.
-        observer.onError((e) => {
+        obs.onError((e) => {
           setError(e.message);
           setStatus("error");
         });
@@ -72,8 +72,7 @@ export function useDeviceScanner(enabled: boolean): DeviceScannerState {
 
     return () => {
       cancelled = true;
-      observerRef.current?.stop();
-      observerRef.current = null;
+      observer?.stop();
       setDevices([]);
       setStatus("idle");
     };

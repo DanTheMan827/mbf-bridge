@@ -87,8 +87,18 @@
   padding: 0.6rem 0.7rem;
   height: 220px;
   overflow-y: auto;
+  /* column-reverse keeps the newest entry visible at the bottom without any
+     JavaScript scrolling – entries are rendered newest-first in the DOM so
+     the first child (bottom of the reversed column) is always the latest. */
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+/* Apply text-wrapping to each row so the flex container itself can shrink. */
+.log > div {
   white-space: pre-wrap;
   word-break: break-all;
+  min-width: 0;
 }
 
 .log .ts   { color: var(--subtext); user-select: none; }
