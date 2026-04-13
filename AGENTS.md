@@ -475,9 +475,31 @@ The CI matrix builds for all 7 targets.  Every change must not introduce compile
 
 ### Mandatory pre-commit checks
 
-Before committing any Rust change, verify that `cargo check` passes for every CI target.
-You can't cross-compile natively in the sandbox, but you can check the current host target
-and rely on careful use of `cfg` guards.  Pay particular attention to:
+> **⛔ NEVER commit or push Rust changes without first running these checks.**
+> CI builds all 7 targets and a failure on any one of them blocks the PR.
+
+#### Rust changes
+
+Run `cargo check` on the host target before every commit:
+
+```sh
+# With default features (embed-adb)
+cargo check
+
+# Without the feature flag (second CI configuration for non-macOS targets)
+cargo check --no-default-features
+```
+
+If the sandbox lacks system dependencies (e.g. GTK on Linux), the build-script
+packages like `glib-sys` will fail to compile — that is a sandbox limitation, not
+a code error.  You can still catch the vast majority of type/API errors this way.
+Do not skip the check because the build fails due to missing system libraries;
+look at the actual `error[E...]` lines and fix any Rust errors before committing.
+
+After fixing an error, run `cargo check` again to confirm it is gone.
+
+Pay particular attention to code guarded by `cfg` attributes — each block
+must be valid Rust for all targets that will compile it:
 
 - `#[cfg(windows)]` — code only compiled on Windows targets.
 - `#[cfg(not(target_os = "android"))]` — excluded from Android.
@@ -486,10 +508,20 @@ and rely on careful use of `cfg` guards.  Pay particular attention to:
 - Imports from `tauri::Manager` must be in scope wherever `.app_handle()`,
   `.get_webview_window()`, or `.webview_windows()` are called.
 
+Key API facts (Tauri v2):
+
+- `exit()` is only available on `AppHandle`, **not** on `App`.  Use
+  `app.app_handle().exit(code)` when you have `app: &tauri::App`.
+- Every `#[tauri::command]` must have a corresponding `[[permission]]` stub in
+  `permissions/*.toml` (identifier `"allow-<kebab-name>"`) or
+  `tauri_build::build()` will **panic** with exit code 101, breaking all targets.
+
+#### Frontend changes
+
 Before committing any frontend change, verify the UI build passes:
 
 ```sh
-cd ui && npm run build
+cd ui && npm install && npm run build
 ```
 
 This compiles TypeScript (`tsc -b`) and runs the Vite build.  Errors here break the Rust
@@ -499,6 +531,8 @@ build because `build.rs` invokes it.
 
 - `tauri::Manager` trait must be **imported** (`use tauri::Manager;`) before calling
   `.app_handle()`, `.get_webview_window()`, etc. — the trait is not in the Tauri prelude.
+- `exit()` is **not** a method on `&tauri::App`.  Call `app.app_handle().exit(code)` instead.
+  (`exit()` is defined on `AppHandle`, which is returned by `app_handle()`.)
 - A bare `None` (or any non-`()` expression) as the last expression inside an `if` block
   **without an `else` arm** is a type error — use `return None;` instead.
 - `win.destroy()` returns `Result<(), _>`; assigning it to `let _ = ...` requires the

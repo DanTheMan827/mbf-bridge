@@ -549,7 +549,7 @@ fn handle_adb_unavailable(app: &tauri::App, browser_url: &str) {
         .set_buttons(MessageButtons::Ok)
         .show();
 
-    app.exit(1);
+    app.app_handle().exit(1);
 }
 
 /// Opens the main app window after a successful winget install.
