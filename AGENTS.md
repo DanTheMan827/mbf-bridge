@@ -93,11 +93,16 @@ mbf-bridge/
 ┌──────────────────────────────────────────────────────────┐
 │  Tauri app process (Rust)                                │
 │                                                          │
-│  main()  ──startup──►  ADB check (adb_connect_or_start) │
+│  setup() ──ADB gate (blocking)──► adb_connect_or_start  │
 │                │                                         │
 │                ▼ (ADB OK)          ▼ (ADB unavailable)  │
 │          create_app_window    handle_adb_unavailable     │
-│               (main)          (winget / manual dialog)  │
+│               (main)          ┌──► Windows + winget:    │
+│                                │    dialog → progress    │
+│                                │    window + winget task │
+│                                │    open_main_window cmd │
+│                                └──► all others:          │
+│                                     error dialog+exit(1) │
 │                                                          │
 │  AdbBridge (Tauri state)                                 │
 │    .connect(id, window)  ──►  TcpStream to adb server   │
@@ -215,11 +220,22 @@ cd ui && npm run build:debug
   `--game-id`, `--ignore-package-id`, `--console`, `--test`, `--help`).
 - Detects the "launch options" modifier key at startup (Shift on Windows/Linux, Option ⌥ on
   macOS) and opens the shift window if held.
-- **Startup ADB gate**: before creating the main app window, the app verifies ADB is
-  reachable.  If not, `handle_adb_unavailable` is called.  The main window must **never**
-  open unless ADB is confirmed working.
+- **Startup ADB gate**: before creating the main app window, `setup` runs
+  `adb_connect_or_start()` on a dedicated thread (blocking until it resolves).
+  If ADB is reachable the main window opens immediately.  If not,
+  `handle_adb_unavailable` is called — it shows a winget prompt (Windows) or
+  a manual-install error dialog (all platforms) and **the main window never
+  opens** until ADB is confirmed working.
+  - `is_winget_available()` (Windows only) — probes for `winget --version`.
+  - `handle_adb_unavailable(app, url)` (not Android) — called from `setup`; on Windows
+    with winget, shows the "Install ADB?" dialog, opens the progress window, and spawns
+    `run_winget_install`; otherwise shows a manual-install dialog and calls `app.exit(1)`.
+  - `run_winget_install(app)` (Windows only, async) — runs winget, streams
+    stdout/stderr as `winget-output` events, emits `winget-done { success }`.
 - Stores `PendingMainWindow` in Tauri app state so the `open_main_window` command (called by
   the winget-progress page after a successful install) can create the main window.
+- `create_app_window<M: Manager<Wry>>` — generic helper used from both the `setup` closure
+  (`&tauri::App`) and the `open_main_window` command (`&tauri::AppHandle`).
 - Serves the embedded SPA via the `mbf://` custom protocol (`serve_embedded`).
 - Registers the Windows taskbar jump list (`jump_list::prepend_task`) whenever `--url`,
   `--dev`, or `--game-id` differ from their defaults.
@@ -242,14 +258,11 @@ cd ui && npm run build:debug
 - Defines `AdbBridge` (Tauri-managed state), `ConnectionState`, and event payload types
   (`AdbConnectedPayload`, `AdbDataPayload`, `AdbClosedPayload`).
 - `AdbBridge::connect` spawns a Tokio task that calls `adb::adb_connect_or_start()` and
-  manages the full read/write lifecycle.
-- `is_winget_available()` (Windows only) — probes for `winget --version`.
-- `handle_adb_unavailable(app)` — called at startup when ADB is not available:
-  - **Windows + winget present**: offers "Install via winget?" dialog; if accepted, opens the
-    `winget-progress` window, runs `winget install --id Google.PlatformTools`, streams
-    stdout/stderr as `winget-output` events, and emits `winget-done` when complete.
-  - **User declined winget, or winget absent, or non-Windows**: shows a "please install
-    manually" error dialog, then calls `app.exit(1)`.
+  manages the full read/write lifecycle.  If ADB is unreachable when JS calls `adb_connect`
+  (which should not happen in normal operation because the startup gate verifies ADB first),
+  the bridge simply emits `adb-connected { success: false }`.
+- The `is_winget_available` / `handle_adb_unavailable` / `run_winget_install` helpers live in
+  `main.rs` (see §5.1 below) because they are only needed at startup.
 
 ### `src/adb/mod.rs`
 

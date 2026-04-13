@@ -10,6 +10,7 @@
     "core:default",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
-    "allow-close-winget-progress-window"
+    "allow-close-winget-progress-window",
+    "allow-open-main-window"
   ]
 }

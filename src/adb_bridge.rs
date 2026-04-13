@@ -72,167 +72,6 @@ pub struct AdbBridge {
     connections: Arc<tokio::sync::Mutex<std::collections::HashMap<String, ConnectionState>>>,
 }
 
-/// Returns `true` when `winget` is available in the current environment.
-#[cfg(windows)]
-fn is_winget_available() -> bool {
-    use std::os::windows::process::CommandExt;
-    std::process::Command::new("winget")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .creation_flags(0x08000000) // CREATE_NO_WINDOW
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
-/// Handles the "no embedded ADB" error case.
-///
-/// On Windows, if `winget` is available the user is offered the choice to
-/// install Google Platform Tools (`winget install --id Google.PlatformTools`).
-/// If the user accepts, a non-closeable progress window is opened that streams
-/// the winget output via `winget-output` / `winget-done` events.
-/// If installation succeeds and ADB starts, the live `TcpStream` is returned.
-///
-/// On every other platform (or when the user declines / winget is absent) a
-/// modal error dialog is shown and `None` is returned.
-#[cfg(not(target_os = "android"))]
-async fn handle_no_adb(app: &tauri::AppHandle) -> Option<tokio::net::TcpStream> {
-    use rfd::{MessageButtons, MessageDialog, MessageLevel};
-
-    // ── Windows: offer to install via winget ────────────────────────────
-    #[cfg(windows)]
-    if is_winget_available() {
-        use rfd::MessageDialogResult;
-        let wants_install = tokio::task::spawn_blocking(|| {
-            MessageDialog::new()
-                .set_title("Install ADB?")
-                .set_description(
-                    "ADB (Android Debug Bridge) is required but could not be started.\n\n\
-                    Would you like to install Google Platform Tools (ADB) \
-                    using Windows Package Manager (winget)?",
-                )
-                .set_level(MessageLevel::Warning)
-                .set_buttons(MessageButtons::YesNo)
-                .show()
-                == MessageDialogResult::Yes
-        })
-        .await
-        .unwrap_or(false);
-
-        if !wants_install {
-            // User explicitly declined – fall through to the manual-install dialog.
-        } else {
-
-        // Open the non-closeable progress window before starting winget.
-        let progress_win =
-            crate::tauri_windows::create_winget_progress_window(app).ok();
-
-        // Spawn winget with piped stdout+stderr so we can stream it to the window.
-        use std::os::windows::process::CommandExt;
-        let mut child = match std::process::Command::new("winget")
-            .args(&[
-                "install",
-                "--id",
-                "Google.PlatformTools",
-                "--accept-package-agreements",
-                "--accept-source-agreements",
-                "--disable-interactivity",
-            ])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .creation_flags(0x08000000) // CREATE_NO_WINDOW
-            .spawn()
-        {
-            Ok(c) => c,
-            Err(_) => {
-                // Couldn't spawn winget – signal failure immediately.
-                if let Some(ref win) = progress_win {
-                    let _ = win.emit("winget-done", serde_json::json!({ "success": false }));
-                }
-                return None;
-            }
-        };
-
-        // Stream stdout to the progress window.
-        let app_clone = app.clone();
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
-
-        // Forward bytes from a reader to the progress window.
-        fn stream_reader(
-            app: tauri::AppHandle,
-            reader: impl std::io::Read + Send + 'static,
-        ) {
-            let mut reader = reader;
-            let mut buf = [0u8; 4096];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => {
-                        let chunk: Vec<u8> = buf[..n].to_vec();
-                        let _ = app.emit(
-                            "winget-output",
-                            serde_json::json!({ "data": chunk }),
-                        );
-                    }
-                }
-            }
-        }
-
-        if let Some(out) = stdout {
-            let a = app.clone();
-            std::thread::spawn(move || stream_reader(a, out));
-        }
-        if let Some(err) = stderr {
-            let a = app.clone();
-            std::thread::spawn(move || stream_reader(a, err));
-        }
-
-        // Wait for winget to finish.
-        let installed = tokio::task::spawn_blocking(move || {
-            child.wait().map(|s| s.success()).unwrap_or(false)
-        })
-        .await
-        .unwrap_or(false);
-
-        // Signal completion to the progress window.
-        let _ = app_clone.emit("winget-done", serde_json::json!({ "success": installed }));
-
-        if installed {
-            if crate::adb::adb_start("adb").await.is_ok() {
-                if let Ok(stream) = crate::adb::adb_connect_retry().await {
-                    return Some(stream);
-                }
-            }
-        }
-        // Installation failed or ADB still unreachable.
-        // The progress window already displayed the failure; skip the generic dialog.
-        return None;
-        } // else wants_install
-    } // if is_winget_available()
-
-    // ── Generic fallback: ask the user to install ADB manually ──────────
-    tokio::task::spawn_blocking(|| {
-        MessageDialog::new()
-            .set_title("ADB Not Available")
-            .set_description(
-                "ADB could not be started automatically.\n\n\
-                Please install ADB (Android Debug Bridge) and ensure it is \
-                in your PATH, or start the ADB server manually before \
-                launching this application.\n\n\
-                Download: https://developer.android.com/studio/releases/platform-tools",
-            )
-            .set_level(MessageLevel::Error)
-            .set_buttons(MessageButtons::Ok)
-            .show();
-    })
-    .await
-    .ok();
-
-    None
-}
-
 impl AdbBridge {
     pub fn new() -> Self {
         Self::default()
@@ -255,28 +94,14 @@ impl AdbBridge {
         let semaphore_clone = semaphore.clone();
 
         tauri::async_runtime::spawn(async move {
-            // Attempt to acquire an ADB stream.  On Windows, when no embedded
-            // ADB is available, `handle_no_adb` may offer a winget install and
-            // return a live stream on success.
+            // Attempt to acquire an ADB connection.  By the time JS calls
+            // adb_connect the startup gate in main() has already confirmed ADB
+            // is reachable, so this should succeed on the first try.  If it
+            // doesn't (e.g. ADB crashed between startup and the first connect),
+            // emit a failure event and return cleanly.
             let stream = match crate::adb::adb_connect_or_start().await {
-                Ok(s) => Some(s),
-                Err(e) if e.to_string() == "no-embedded-adb" => {
-                    #[cfg(not(target_os = "android"))]
-                    {
-                        handle_no_adb(&window.app_handle()).await
-                    }
-                    #[cfg(target_os = "android")]
-                    {
-                        let _ = e;
-                        None
-                    }
-                }
-                Err(_) => None,
-            };
-
-            let stream = match stream {
-                Some(s) => s,
-                None => {
+                Ok(s) => s,
+                Err(_) => {
                     let _ = window.emit(
                         "adb-connected",
                         AdbConnectedPayload {

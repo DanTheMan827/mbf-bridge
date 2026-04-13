@@ -103,6 +103,13 @@ export default function WingetProgressPage() {
     };
   }, []);
 
+  const handleContinue = async () => {
+    const invoke = getInvoke();
+    if (invoke) {
+      await invoke("open_main_window");
+    }
+  };
+
   const handleClose = async () => {
     const invoke = getInvoke();
     if (invoke) {
@@ -162,7 +169,7 @@ export default function WingetProgressPage() {
               , then restart the app.
             </p>
           )}
-          <button className={styles.closeBtn} onClick={handleClose}>
+          <button className={styles.closeBtn} onClick={success ? handleContinue : handleClose}>
             {success ? "Continue" : "Close"}
           </button>
         </div>

@@ -318,13 +318,13 @@ fn serve_embedded(req: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<
 // Window creation helpers
 // ---------------------------------------------------------------------------
 
-fn create_app_window(
-    app: &tauri::App,
+fn create_app_window<M: tauri::Manager<tauri::Wry>>(
+    manager: &M,
     url: tauri::WebviewUrl,
     init_script: &str,
 ) -> tauri::Result<tauri::WebviewWindow> {
     let main_url = url.clone();
-    let builder = tauri::WebviewWindowBuilder::new(app, "main", url)
+    let builder = tauri::WebviewWindowBuilder::new(manager, "main", url)
         .initialization_script(init_script);
 
     // title, inner_size and min_inner_size are desktop-only APIs.
@@ -381,6 +381,203 @@ fn create_app_window(
         });
 
     builder.devtools(true).zoom_hotkeys_enabled(true).build()
+}
+
+// ---------------------------------------------------------------------------
+// ADB startup gate helpers (desktop only)
+// ---------------------------------------------------------------------------
+
+/// Holds the pending main-window URL while the winget-progress window is shown.
+///
+/// Stored in Tauri app state during `handle_adb_unavailable` so the
+/// `open_main_window` command (called by the React page after a successful
+/// winget install) can create the main window with the correct URL.
+#[cfg(not(target_os = "android"))]
+struct PendingMainWindow {
+    url: String,
+}
+
+/// Returns `true` when `winget` is available in the current environment.
+#[cfg(windows)]
+fn is_winget_available() -> bool {
+    use std::os::windows::process::CommandExt;
+    std::process::Command::new("winget")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Spawns `winget install --id Google.PlatformTools`, streams its
+/// stdout/stderr to the progress window via `winget-output` events, and
+/// emits `winget-done { success }` when the process exits.
+///
+/// Runs as a `tauri::async_runtime::spawn` task so the setup closure can
+/// return immediately after opening the progress window.
+#[cfg(windows)]
+async fn run_winget_install(app: tauri::AppHandle) {
+    use std::io::Read as _;
+    use std::os::windows::process::CommandExt;
+    use tauri::Emitter;
+
+    let mut child = match std::process::Command::new("winget")
+        .args(&[
+            "install",
+            "--id",
+            "Google.PlatformTools",
+            "--accept-package-agreements",
+            "--accept-source-agreements",
+            "--disable-interactivity",
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => {
+            let _ = app.emit("winget-done", serde_json::json!({ "success": false }));
+            return;
+        }
+    };
+
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
+    fn stream_reader(app: tauri::AppHandle, mut reader: impl std::io::Read + Send + 'static) {
+        let mut buf = [0u8; 4096];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    let chunk: Vec<u8> = buf[..n].to_vec();
+                    let _ = app.emit("winget-output", serde_json::json!({ "data": chunk }));
+                }
+            }
+        }
+    }
+
+    if let Some(out) = stdout {
+        let a = app.clone();
+        std::thread::spawn(move || stream_reader(a, out));
+    }
+    if let Some(err) = stderr {
+        let a = app.clone();
+        std::thread::spawn(move || stream_reader(a, err));
+    }
+
+    let installed = tokio::task::spawn_blocking(move || {
+        child.wait().map(|s| s.success()).unwrap_or(false)
+    })
+    .await
+    .unwrap_or(false);
+
+    let _ = app.emit("winget-done", serde_json::json!({ "success": installed }));
+}
+
+/// Called from `setup` when `adb_connect_or_start` returns an error, i.e.
+/// ADB cannot be started before the main window is shown.
+///
+/// Decision tree:
+/// 1. **Windows + winget available**: show a "Install via winget?" dialog.
+///    - User accepts → store `PendingMainWindow` state, open the
+///      non-closeable progress window, spawn `run_winget_install` in the
+///      background, and **return without opening the main window**.  The
+///      `open_main_window` command will create the main window after the
+///      React page confirms success.
+///    - User declines → fall through to (2).
+/// 2. **All other cases**: show a "please install manually" error dialog,
+///    then exit with code 1.
+#[cfg(not(target_os = "android"))]
+fn handle_adb_unavailable(app: &tauri::App, browser_url: &str) {
+    use rfd::{MessageButtons, MessageDialog, MessageLevel};
+
+    // ── Windows: offer to install via winget ────────────────────────────
+    #[cfg(windows)]
+    if is_winget_available() {
+        use rfd::MessageDialogResult;
+
+        let wants_install = MessageDialog::new()
+            .set_title("Install ADB?")
+            .set_description(
+                "ADB (Android Debug Bridge) is required but could not be started.\n\n\
+                Would you like to install Google Platform Tools (ADB) \
+                using Windows Package Manager (winget)?",
+            )
+            .set_level(MessageLevel::Warning)
+            .set_buttons(MessageButtons::YesNo)
+            .show()
+            == MessageDialogResult::Yes;
+
+        if wants_install {
+            // Store the URL so open_main_window can create the main window later.
+            app.manage(PendingMainWindow {
+                url: browser_url.to_string(),
+            });
+
+            match crate::tauri_windows::create_winget_progress_window(app.app_handle()) {
+                Ok(_) => {
+                    // Spawn winget; the progress window will call open_main_window on success.
+                    tauri::async_runtime::spawn(run_winget_install(app.app_handle().clone()));
+                    // Return WITHOUT opening the main window.  The winget-progress
+                    // window is now the only window, and it drives the rest of the flow.
+                    return;
+                }
+                Err(e) => {
+                    eprintln!("Failed to create winget-progress window: {e}");
+                    // Fall through to the generic error dialog.
+                }
+            }
+        }
+        // User declined or progress window creation failed — fall through.
+    }
+
+    // ── Generic fallback: ask the user to install ADB manually ──────────
+    MessageDialog::new()
+        .set_title("ADB Not Available")
+        .set_description(
+            "ADB could not be started automatically.\n\n\
+            Please install ADB (Android Debug Bridge) and ensure it is \
+            in your PATH, or start the ADB server manually before \
+            launching this application.\n\n\
+            Download: https://developer.android.com/studio/releases/platform-tools",
+        )
+        .set_level(MessageLevel::Error)
+        .set_buttons(MessageButtons::Ok)
+        .show();
+
+    app.exit(1);
+}
+
+/// Opens the main app window after a successful winget install.
+///
+/// Called by the `WingetProgressPage` "Continue" button.  Retrieves the
+/// pending URL from Tauri state, destroys the winget-progress window, and
+/// creates the main `WebviewWindow`.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn open_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    let url = app
+        .try_state::<PendingMainWindow>()
+        .map(|s| s.url.clone())
+        .ok_or_else(|| "No pending main window URL in state".to_string())?;
+
+    // Close the non-closeable progress window programmatically.
+    if let Some(win) = app.get_webview_window("winget-progress") {
+        let _ = win.destroy().ok();
+    }
+
+    let webview_url = url::Url::parse(&url)
+        .map(tauri::WebviewUrl::External)
+        .map_err(|e| e.to_string())?;
+
+    create_app_window(&app, webview_url, &crate::adb_bridge::INIT_SCRIPT)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -512,11 +709,34 @@ async fn main() {
                 } else if open_shift_window {
                     tauri_windows::create_shift_window(app, modifier_key_label);
                 } else {
-                    let url = url::Url::parse(&browser_url)
-                        .map(tauri::WebviewUrl::External)
-                        .map_err(|e| e.to_string())?;
-                        
-                    create_app_window(app, url, &crate::adb_bridge::INIT_SCRIPT)?;
+                    // ── ADB gate ─────────────────────────────────────────────
+                    // Verify ADB is reachable *before* the main window opens.
+                    // We run the async check on a dedicated thread with its own
+                    // single-threaded Tokio runtime so we can block here without
+                    // interfering with Tauri's runtime or causing a deadlock.
+                    let adb_ok = std::thread::spawn(|| {
+                        tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                            .map(|rt| rt.block_on(crate::adb::adb_connect_or_start()).is_ok())
+                            .unwrap_or(false)
+                    })
+                    .join()
+                    .unwrap_or(false);
+
+                    if adb_ok {
+                        let url = url::Url::parse(&browser_url)
+                            .map(tauri::WebviewUrl::External)
+                            .map_err(|e| e.to_string())?;
+
+                        create_app_window(app, url, &crate::adb_bridge::INIT_SCRIPT)?;
+                    } else {
+                        // ADB unavailable: show winget prompt (Windows) or
+                        // manual-install dialog (all platforms), then either
+                        // open the progress window (returning here without a
+                        // main window) or exit(1).
+                        handle_adb_unavailable(app, &browser_url);
+                    }
                 }
             }
 
@@ -533,6 +753,7 @@ async fn main() {
         get_help_text,
         launch_with_args,
         close_winget_progress_window,
+        open_main_window,
     ]);
 
     #[cfg(target_os = "android")]
