@@ -465,6 +465,7 @@ fn main() {
     let dev_changed     = ARGS.dev_mode;
     let game_id_changed = ARGS.game_id != DEFAULT_GAME_ID;
 
+    #[cfg(windows)]
     if url_changed || dev_changed || game_id_changed {
         // Build canonical args string from only the three key flags.
         let mut entry_args: Vec<String> = Vec::new();
