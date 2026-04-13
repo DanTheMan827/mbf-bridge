@@ -3,11 +3,13 @@ use std::path::PathBuf;
 use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[cfg(windows)]
 struct TaskEntry {
     title: String,
     args: String,
 }
 
+#[cfg(windows)]
 fn tasks_file_path() -> Option<PathBuf> {
     let base = std::env::var_os("LOCALAPPDATA")?;
     let mut path = PathBuf::from(base);
@@ -18,6 +20,7 @@ fn tasks_file_path() -> Option<PathBuf> {
     Some(path)
 }
 
+#[cfg(windows)]
 fn load_tasks() -> Vec<TaskEntry> {
     if let Some(path) = tasks_file_path() {
         if let Ok(data) = fs::read_to_string(path) {
@@ -29,6 +32,7 @@ fn load_tasks() -> Vec<TaskEntry> {
     Vec::new()
 }
 
+#[cfg(windows)]
 fn save_tasks(tasks: &[TaskEntry]) {
     if let Some(path) = tasks_file_path() {
         let _ = fs::write(path, serde_json::to_string_pretty(tasks).unwrap_or_default());
@@ -36,6 +40,7 @@ fn save_tasks(tasks: &[TaskEntry]) {
 }
 
 /// Prepend a task (move to front if exists), persist, and update jump list
+#[cfg(windows)]
 pub fn prepend_task(title: &str, args: &str) {
     let mut tasks = load_tasks();
     // Remove any existing matching task
