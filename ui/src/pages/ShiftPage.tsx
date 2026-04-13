@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import shared from "../styles/shared.module.css";
 import styles from "./ShiftPage.module.css";
+import HelpCard from "../components/HelpCard";
 
 const STORAGE_KEY = "mbf-bridge-launch-args";
 
@@ -12,7 +13,6 @@ export default function ShiftPage() {
   const modifierKey = window.__mbfModifierKey ?? "Shift";
   const invoke = getInvoke();
 
-  const [helpText, setHelpText] = useState<string>("Loading…");
   const [args, setArgs] = useState<string>(() => {
     try {
       return localStorage.getItem(STORAGE_KEY) ?? "";
@@ -25,17 +25,6 @@ export default function ShiftPage() {
     cls: "",
   });
   const [launching, setLaunching] = useState(false);
-
-  // Load help text via Tauri IPC.
-  useEffect(() => {
-    if (!invoke) {
-      setHelpText("(Tauri IPC not available)");
-      return;
-    }
-    invoke<string>("get_help_text")
-      .then((t) => setHelpText(t))
-      .catch((e: unknown) => setHelpText(`(failed to load help: ${e})`));
-  }, [invoke]);
 
   // Persist args on every change.
   useEffect(() => {
@@ -95,18 +84,7 @@ export default function ShiftPage() {
       </header>
 
       {/* ── Help text ───────────────────────────────────────────────────── */}
-      <div className={shared.card}>
-        <div className={shared.cardHeader}>
-          <span className={shared.cardTitle}>Available Arguments</span>
-        </div>
-        <div className={shared.cardBody}>
-          <div
-            className={styles.helpScroll}
-          >
-            <pre className={styles.helpPre}>{helpText}</pre>
-          </div>
-        </div>
-      </div>
+      <HelpCard />
 
       {/* ── Custom args + launch ─────────────────────────────────────────── */}
       <div className={shared.card}>

@@ -1,26 +1,9 @@
-import { useEffect, useState } from "react";
-import shared from "../styles/shared.module.css";
 import styles from "./HelpPage.module.css";
+import HelpCard from "../components/HelpCard";
 
-function getInvoke() {
-  return window.__TAURI__?.core.invoke ?? null;
-}
+
 
 export default function HelpPage() {
-  const invoke = getInvoke();
-  const [helpText, setHelpText] = useState<string>("Loading…");
-
-  // Load help text via Tauri IPC.
-  useEffect(() => {
-    if (!invoke) {
-      setHelpText("(Tauri IPC not available)");
-      return;
-    }
-    invoke<string>("get_help_text")
-      .then((t) => setHelpText(t))
-      .catch((e: unknown) => setHelpText(`(failed to load help: ${e})`));
-  }, [invoke]);
-
   return (
     <div className={styles.page}>
       {/* ── Header ──────────────────────────────────────────────────────── */}
@@ -46,21 +29,11 @@ export default function HelpPage() {
       </header>
 
       {/* ── Help text ───────────────────────────────────────────────────── */}
-      <div className={shared.card}>
-        <div className={shared.cardHeader}>
-          <span className={shared.cardTitle}>Available Arguments</span>
-        </div>
-        <div className={shared.cardBody}>
-          <div className={styles.helpScroll}>
-            <pre className={styles.helpPre}>{helpText}</pre>
-          </div>
-        </div>
-      </div>
+      <HelpCard />
 
       {/* ── Footer hint ──────────────────────────────────────────────────── */}
       <p className={styles.footer}>
-        Pass these arguments when launching from a terminal or a jump list
-        entry.
+        Pass these arguments when launching from a terminal.
       </p>
     </div>
   );

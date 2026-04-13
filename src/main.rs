@@ -400,7 +400,7 @@ fn create_shift_window(
     )
     .initialization_script(&init_script)
     .title("ModsBeforeFriday Bridge – Launch Options")
-    .inner_size(820.0, 640.0)
+    .inner_size(1024.0, 768.0)
     .min_inner_size(600.0, 400.0)
     .resizable(true)
     .devtools(cfg!(debug_assertions))
@@ -418,7 +418,7 @@ fn create_help_window(app: &tauri::App) -> tauri::Result<tauri::WebviewWindow> {
         ),
     )
     .title("ModsBeforeFriday Bridge – Help")
-    .inner_size(760.0, 600.0)
+    .inner_size(1024.0, 768.0)
     .min_inner_size(500.0, 400.0)
     .resizable(true)
     .devtools(cfg!(debug_assertions))
@@ -463,10 +463,11 @@ fn main() {
     // Add a jump list entry whenever the combination differs from defaults.
     let url_changed     = ARGS.url     != DEFAULT_URL;
     let dev_changed     = ARGS.dev_mode;
+    let ignore_package_id_changed = ARGS.ignore_package_id;
     let game_id_changed = ARGS.game_id != DEFAULT_GAME_ID;
 
     #[cfg(windows)]
-    if url_changed || dev_changed || game_id_changed {
+    if url_changed || dev_changed || ignore_package_id_changed || game_id_changed {
         // Build canonical args string from only the three key flags.
         let mut entry_args: Vec<String> = Vec::new();
         if url_changed {
@@ -508,6 +509,7 @@ fn main() {
         let mut badges: Vec<&str> = Vec::new();
         if dev_changed     { badges.push("dev"); }
         if game_id_changed { badges.push(&ARGS.game_id); }
+        if ignore_package_id_changed { badges.push("ignore-package-id"); }
 
         let title = if badges.is_empty() {
             url_label
