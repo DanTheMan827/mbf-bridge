@@ -118,17 +118,23 @@ fn is_launch_modifier_held() -> bool {
     #[cfg(target_os = "linux")]
     {
         // Use X11's XQueryKeymap to sample the current keyboard state.
-        // Keycodes for Shift on most keyboards: Left Shift = 50, Right Shift = 62.
+        // Keycodes for Shift: Left Shift = 50, Right Shift = 62.
         use x11::xlib::{Display, XCloseDisplay, XOpenDisplay, XQueryKeymap};
+        struct DisplayGuard(*mut Display);
+        impl Drop for DisplayGuard {
+            fn drop(&mut self) {
+                if !self.0.is_null() {
+                    unsafe { XCloseDisplay(self.0) };
+                }
+            }
+        }
         unsafe {
-            let display: *mut Display = XOpenDisplay(std::ptr::null());
-            if display.is_null() {
+            let guard = DisplayGuard(XOpenDisplay(std::ptr::null()));
+            if guard.0.is_null() {
                 return false;
             }
             let mut keys = [0i8; 32];
-            XQueryKeymap(display, keys.as_mut_ptr());
-            XCloseDisplay(display);
-            // Keycode 50 = Left Shift, keycode 62 = Right Shift.
+            XQueryKeymap(guard.0, keys.as_mut_ptr());
             // Each bit in `keys` represents one keycode: keys[kc/8] bit (kc%8).
             let left_shift = (keys[50 / 8] >> (50 % 8)) & 1;
             let right_shift = (keys[62 / 8] >> (62 % 8)) & 1;
@@ -246,7 +252,7 @@ async fn launch_with_args(
     // add it to the Windows taskbar jump list so it can be quickly relaunched.
     #[cfg(windows)]
     {
-        let has_custom_url = parsed.windows(2).any(|w| w[0] == "--url");
+        let has_custom_url = parsed.iter().any(|arg| arg == "--url");
         if !parsed.is_empty() && has_custom_url {
             let title = format!("Launch: {}", args.trim());
             let short_title = if title.len() > 60 {

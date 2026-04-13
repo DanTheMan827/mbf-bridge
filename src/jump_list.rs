@@ -11,23 +11,25 @@
 mod imp {
     use std::os::windows::ffi::OsStrExt;
 
-    use windows::core::{Interface, GUID, PCWSTR};
+    use windows::core::{Interface, BSTR, GUID, PCWSTR};
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
     };
+    use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
+    use windows::Win32::System::Variant::VARENUM;
     use windows::Win32::UI::Shell::{
         ICustomDestinationList, IObjectArray, IObjectCollection, IShellLinkW,
     };
     use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, PROPERTYKEY};
 
     // CLSIDs from the Windows SDK.
-    // CLSID_DestinationList        = {77f10cf0-3db5-4966-b520-b7c54fd35ed6}
+    // CLSID_DestinationList            = {77f10cf0-3db5-4966-b520-b7c54fd35ed6}
     const CLSID_DESTINATION_LIST: GUID =
         GUID::from_u128(0x77f10cf0_3db5_4966_b520_b7c54fd35ed6);
     // CLSID_EnumerableObjectCollection = {2d3468c1-36a7-43b6-ac24-d3f02fd9607a}
     const CLSID_ENUM_OBJ_COLLECTION: GUID =
         GUID::from_u128(0x2d3468c1_36a7_43b6_ac24_d3f02fd9607a);
-    // CLSID_ShellLink              = {00021401-0000-0000-c000-000000000046}
+    // CLSID_ShellLink                  = {00021401-0000-0000-c000-000000000046}
     const CLSID_SHELL_LINK: GUID =
         GUID::from_u128(0x00021401_0000_0000_c000_000000000046);
 
@@ -44,6 +46,26 @@ mod imp {
             .collect()
     }
 
+    /// Build a `PROPVARIANT` holding a `VT_BSTR` value.
+    ///
+    /// The `BSTR` is an owned, reference-counted string allocated by the COM
+    /// runtime, so `IPropertyStore::SetValue` always receives a valid pointer
+    /// regardless of when it makes its internal copy.
+    fn prop_variant_bstr(s: &str) -> windows::core::Result<PROPVARIANT> {
+        // `BSTR::from` allocates a COM BSTR (owned, null-terminated wide string).
+        let bstr = BSTR::from(s);
+        let mut pv = PROPVARIANT::default();
+        // VT_BSTR = 8
+        unsafe {
+            pv.Anonymous.Anonymous.vt = VARENUM(8);
+            // Transfer ownership of the BSTR into the PROPVARIANT.
+            // The PROPVARIANT's destructor (PropVariantClear) will free it.
+            pv.Anonymous.Anonymous.Anonymous.bstrVal =
+                std::mem::ManuallyDrop::new(bstr.into_raw() as *mut u16);
+        }
+        Ok(pv)
+    }
+
     pub fn add_tasks(tasks: &[(&str, &str)]) {
         unsafe {
             // Initialise COM (apartment-threaded); ignore if already initialised.
@@ -56,9 +78,8 @@ mod imp {
                 };
 
             let mut slots: u32 = 0;
-            match dest_list.BeginList(&mut slots, &IObjectArray::IID) {
-                Ok(_) => {}
-                Err(_) => return,
+            if dest_list.BeginList(&mut slots, &IObjectArray::IID).is_err() {
+                return;
             }
 
             let collection: IObjectCollection = match CoCreateInstance(
@@ -99,20 +120,14 @@ mod imp {
                 let desc_wide = to_wide(title);
                 let _ = link.SetDescription(PCWSTR(desc_wide.as_ptr()));
 
-                // Set the visible title via IPropertyStore.
+                // Set the visible jump-list title via IPropertyStore (VT_BSTR).
                 if let Ok(store) = link.cast::<IPropertyStore>() {
-                    let title_wide = to_wide(title);
-                    // Build a VT_LPWSTR PROPVARIANT pointing at our wide string.
-                    // Safety: title_wide lives until after Commit().
-                    let mut pv = windows::Win32::System::Com::StructuredStorage::PROPVARIANT::default();
-                    pv.Anonymous.Anonymous.vt =
-                        windows::Win32::System::Variant::VARENUM(31); // VT_LPWSTR
-                    pv.Anonymous.Anonymous.Anonymous.pwszVal =
-                        windows::core::PWSTR(title_wide.as_ptr() as *mut u16);
-                    let _ = store.SetValue(&PKEY_TITLE, &pv);
-                    // Null the pointer before PROPVARIANT is dropped (we own the string).
-                    pv.Anonymous.Anonymous.Anonymous.pwszVal = windows::core::PWSTR::null();
-                    let _ = store.Commit();
+                    if let Ok(pv) = prop_variant_bstr(title) {
+                        let _ = store.SetValue(&PKEY_TITLE, &pv);
+                        let _ = store.Commit();
+                        // pv drops here; its destructor calls PropVariantClear which
+                        // frees the BSTR allocated in prop_variant_bstr.
+                    }
                 }
 
                 let link_unknown: windows::core::IUnknown = link.cast().unwrap();

@@ -129,11 +129,13 @@ interface LogPaneProps {
 }
 
 function LogPane({ entries }: LogPaneProps) {
-  // Entries are rendered newest-first inside a flex column-reverse container,
-  // which keeps the latest entry visible at the bottom without any JS scrolling.
+  // Rendered in a flex column-reverse container; we reverse the array so that
+  // the newest entry appears at the bottom without any JS scrolling.
+  // Slice first to avoid mutating the original array from state.
+  const reversed = entries.slice().reverse();
   return (
     <div className={shared.log}>
-      {[...entries].reverse().map((e) => (
+      {reversed.map((e) => (
         <div key={e.id}>
           <span className={shared.ts}>[{e.ts}] </span>
           <span className={shared[e.cls]}>{e.msg}</span>
@@ -158,6 +160,10 @@ const STATE_CONFIG: Record<
 
 interface DevicesCardProps {
   enabled: boolean;
+}
+
+function deviceStateLabel(state: string): string {
+  return STATE_CONFIG[state as AdbServerClient.ConnectionState]?.label ?? state;
 }
 
 function DevicesCard({ enabled }: DevicesCardProps) {
@@ -196,7 +202,7 @@ function DevicesCard({ enabled }: DevicesCardProps) {
                 <div
                   className={styles.deviceDot}
                   data-state={d.state}
-                  title={STATE_CONFIG[d.state as AdbServerClient.ConnectionState]?.label ?? d.state}
+                  title={deviceStateLabel(d.state)}
                 />
 
                 {/* Device info */}
@@ -218,7 +224,7 @@ function DevicesCard({ enabled }: DevicesCardProps) {
                   className={styles.deviceStateBadge}
                   data-state={d.state}
                 >
-                  {STATE_CONFIG[d.state as AdbServerClient.ConnectionState]?.label ?? d.state}
+                  {deviceStateLabel(d.state)}
                 </span>
               </div>
             ))}
