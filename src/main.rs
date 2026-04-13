@@ -25,12 +25,14 @@ mod adb_bridge;
 mod config;
 mod console;
 mod jump_list;
+mod tauri_windows;
 
 use adb_bridge::AdbBridge;
 use clap::{CommandFactory, Parser};
 use config::{DEFAULT_GAME_ID, DEFAULT_URL};
 use include_dir::{include_dir, Dir};
 use lazy_static::lazy_static;
+#[cfg(not(target_os = "android"))]
 use urlencoding::encode as url_encode;
 
 #[cfg(not(target_os = "android"))]
@@ -255,19 +257,7 @@ async fn launch_with_args(
         shlex::split(&args).unwrap_or_default()
     };
 
-    // Extract the three jump-list key values from the parsed argument vector.
-    #[cfg(windows)]
-    {
-        /// Walk a `&[String]` looking for `--flag <value>` and return the value.
-        fn extract_flag<'a>(parsed: &'a [String], flag: &str) -> Option<&'a str> {
-            parsed
-                .windows(2)
-                .find(|w| w[0] == flag)
-                .map(|w| w[1].as_str())
-        }
-    }
-
-    std::process::Command::new(&exe)
+    let _ = std::process::Command::new(&exe)
         .args(&parsed)
         .spawn()
         .map_err(|e| e.to_string())?;
@@ -379,57 +369,12 @@ fn create_app_window(
     builder.devtools(true).zoom_hotkeys_enabled(true).build()
 }
 
-/// Creates the launch-options window (label = `"shift"`).
-#[cfg(not(target_os = "android"))]
-fn create_shift_window(
-    app: &tauri::App,
-    modifier_key: &str,
-) -> tauri::Result<tauri::WebviewWindow> {
-    let modifier_key_json = format!(
-        "\"{}\"",
-        modifier_key.replace('\\', "\\\\").replace('"', "\\\"")
-    );
-    let init_script = format!("window.__mbfModifierKey={};", modifier_key_json);
-
-    tauri::WebviewWindowBuilder::new(
-        app,
-        "shift",
-        tauri::WebviewUrl::CustomProtocol(
-            url::Url::parse("mbf://localhost/shift").unwrap(),
-        ),
-    )
-    .initialization_script(&init_script)
-    .title("ModsBeforeFriday Bridge – Launch Options")
-    .inner_size(1024.0, 768.0)
-    .min_inner_size(600.0, 400.0)
-    .resizable(true)
-    .devtools(cfg!(debug_assertions))
-    .build()
-}
-
-/// Creates the help window (label = `"help"`).
-#[cfg(not(target_os = "android"))]
-fn create_help_window(app: &tauri::App) -> tauri::Result<tauri::WebviewWindow> {
-    tauri::WebviewWindowBuilder::new(
-        app,
-        "help",
-        tauri::WebviewUrl::CustomProtocol(
-            url::Url::parse("mbf://localhost/help").unwrap(),
-        ),
-    )
-    .title("ModsBeforeFriday Bridge – Help")
-    .inner_size(1024.0, 768.0)
-    .min_inner_size(500.0, 400.0)
-    .resizable(true)
-    .devtools(cfg!(debug_assertions))
-    .build()
-}
-
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
-fn main() {
+#[tokio::main]
+async fn main() {
     #[cfg(windows)]
     use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
 
@@ -437,11 +382,7 @@ fn main() {
         #[cfg(windows)]
         let _ = SetCurrentProcessExplicitAppUserModelID(windows::core::w!("com.DanTheMan827.mbf-bridge"));
     }
-
-    // Windows: allocate a console in release builds when --console is passed.
-    #[cfg(all(not(debug_assertions), windows))]
-    let _allocated_console = (ARGS.console || ARGS.help) && console::allocate_console();
-
+    
     // --help: open a React help window instead of printing to a console.
     // On debug builds (where the console is always present) we also print to
     // stdout for convenience.
@@ -539,6 +480,10 @@ fn main() {
     let modifier_key_label = "Option (\u{2325})"; // ⌥
     #[cfg(all(not(target_os = "android"), not(target_os = "macos")))]
     let modifier_key_label = "Shift";
+    
+    if let Err(_) = crate::adb::adb_connect_or_start().await {
+        return;
+    }
 
     let builder = tauri::Builder::default()
         .manage(AdbBridge::new())
@@ -555,25 +500,22 @@ fn main() {
             // Create the appropriate window (Android manages its own activity).
             #[cfg(not(target_os = "android"))]
             {
-                if ARGS.help {
-                    create_help_window(app)?;
+                if ARGS.test {
+                    tauri_windows::create_test_window(app);
+                } else if ARGS.help {
+                    tauri_windows::create_help_window(app);
                 } else if open_shift_window {
-                    create_shift_window(app, modifier_key_label)?;
+                    tauri_windows::create_shift_window(app, modifier_key_label);
                 } else {
                     // Pre-warm the ADB connection in the background.
                     tauri::async_runtime::spawn(async {
                         let _ = crate::adb::adb_connect_or_start().await;
                     });
 
-                    let url = if ARGS.test {
-                        tauri::WebviewUrl::CustomProtocol(
-                            url::Url::parse("mbf://localhost/test").unwrap(),
-                        )
-                    } else {
-                        url::Url::parse(&browser_url)
-                            .map(tauri::WebviewUrl::External)
-                            .map_err(|e| e.to_string())?
-                    };
+                    let url = url::Url::parse(&browser_url)
+                        .map(tauri::WebviewUrl::External)
+                        .map_err(|e| e.to_string())?;
+                        
                     create_app_window(app, url, &init_script)?;
                 }
             }
