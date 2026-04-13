@@ -1,0 +1,126 @@
+/* WingetProgressPage – layout and component styles */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 1.25rem 1.5rem 1.5rem;
+  gap: 1rem;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ── Header ──────────────────────────────────────────────────── */
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.logoIcon {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 6px;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pageTitle {
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.pageSubtitle {
+  font-size: 0.8rem;
+  color: var(--subtext);
+  margin-top: 0.2rem;
+}
+
+/* Push spinner to the right of the header */
+.spinner {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Terminal ────────────────────────────────────────────────── */
+
+.termWrapper {
+  flex: 1 1 0;
+  min-height: 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #0f1117;
+  border: 1px solid var(--border);
+}
+
+.termContainer {
+  width: 100%;
+  height: 100%;
+}
+
+/* xterm.js overrides – fit into our container */
+.termContainer :global(.xterm) {
+  height: 100%;
+}
+.termContainer :global(.xterm-viewport),
+.termContainer :global(.xterm-screen) {
+  width: 100% !important;
+}
+
+/* ── Footer ──────────────────────────────────────────────────── */
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.errorHint {
+  font-size: 0.8rem;
+  color: var(--red);
+  flex: 1 1 0;
+}
+
+.errorHint a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.closeBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--accent);
+  border: none;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--accent-text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.38rem 1rem;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.closeBtn:hover {
+  background: var(--accent-hover);
+}

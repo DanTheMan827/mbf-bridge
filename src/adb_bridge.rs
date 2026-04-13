@@ -90,12 +90,14 @@ fn is_winget_available() -> bool {
 ///
 /// On Windows, if `winget` is available the user is offered the choice to
 /// install Google Platform Tools (`winget install --id Google.PlatformTools`).
+/// If the user accepts, a non-closeable progress window is opened that streams
+/// the winget output via `winget-output` / `winget-done` events.
 /// If installation succeeds and ADB starts, the live `TcpStream` is returned.
 ///
 /// On every other platform (or when the user declines / winget is absent) a
 /// modal error dialog is shown and `None` is returned.
 #[cfg(not(target_os = "android"))]
-async fn handle_no_adb() -> Option<tokio::net::TcpStream> {
+async fn handle_no_adb(app: &tauri::AppHandle) -> Option<tokio::net::TcpStream> {
     use rfd::{MessageButtons, MessageDialog, MessageLevel};
 
     // ── Windows: offer to install via winget ────────────────────────────
@@ -123,21 +125,81 @@ async fn handle_no_adb() -> Option<tokio::net::TcpStream> {
             return None;
         }
 
-        let installed = tokio::task::spawn_blocking(|| {
-            std::process::Command::new("winget")
-                .args(&[
-                    "install",
-                    "--id",
-                    "Google.PlatformTools",
-                    "--accept-package-agreements",
-                    "--accept-source-agreements",
-                ])
-                .status()
-                .map(|s| s.success())
-                .unwrap_or(false)
+        // Open the non-closeable progress window before starting winget.
+        let progress_win =
+            crate::tauri_windows::create_winget_progress_window(app).ok();
+
+        // Spawn winget with piped stdout+stderr so we can stream it to the window.
+        use std::os::windows::process::CommandExt;
+        let mut child = match std::process::Command::new("winget")
+            .args(&[
+                "install",
+                "--id",
+                "Google.PlatformTools",
+                "--accept-package-agreements",
+                "--accept-source-agreements",
+                "--disable-interactivity",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(_) => {
+                // Couldn't spawn winget – signal failure immediately.
+                if let Some(ref win) = progress_win {
+                    let _ = win.emit("winget-done", serde_json::json!({ "success": false }));
+                }
+                return None;
+            }
+        };
+
+        // Stream stdout to the progress window.
+        let app_clone = app.clone();
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        // Forward bytes from a reader to the progress window.
+        fn stream_reader(
+            app: tauri::AppHandle,
+            reader: impl std::io::Read + Send + 'static,
+        ) {
+            use std::io::Read;
+            let mut reader = reader;
+            let mut buf = [0u8; 4096];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        let chunk: Vec<u8> = buf[..n].to_vec();
+                        let _ = app.emit(
+                            "winget-output",
+                            serde_json::json!({ "data": chunk }),
+                        );
+                    }
+                }
+            }
+        }
+
+        if let Some(out) = stdout {
+            let a = app.clone();
+            std::thread::spawn(move || stream_reader(a, out));
+        }
+        if let Some(err) = stderr {
+            let a = app.clone();
+            std::thread::spawn(move || stream_reader(a, err));
+        }
+
+        // Wait for winget to finish.
+        let installed = tokio::task::spawn_blocking(move || {
+            child.wait().map(|s| s.success()).unwrap_or(false)
         })
         .await
         .unwrap_or(false);
+
+        // Signal completion to the progress window.
+        let _ = app_clone.emit("winget-done", serde_json::json!({ "success": installed }));
 
         if installed {
             if crate::adb::adb_start("adb").await.is_ok() {
@@ -146,8 +208,9 @@ async fn handle_no_adb() -> Option<tokio::net::TcpStream> {
                 }
             }
         }
-        // Installation failed or ADB still unreachable – fall through to
-        // the generic error dialog below.
+        // Installation failed or ADB still unreachable.
+        // The progress window already displayed the failure; skip the generic dialog.
+        None
     }
 
     // ── Generic fallback: ask the user to install ADB manually ──────────
@@ -201,7 +264,7 @@ impl AdbBridge {
                 Err(e) if e.to_string() == "no-embedded-adb" => {
                     #[cfg(not(target_os = "android"))]
                     {
-                        handle_no_adb().await
+                        handle_no_adb(&window.app_handle()).await
                     }
                     #[cfg(target_os = "android")]
                     {

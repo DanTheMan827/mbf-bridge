@@ -265,6 +265,20 @@ async fn launch_with_args(
     Ok(())
 }
 
+/// Closes the winget-progress window programmatically.
+///
+/// Called from the WingetProgressPage after the user clicks the close/retry
+/// button (i.e. after `winget-done` has been received).  This is needed
+/// because the window was created with `closable(false)` to prevent accidental
+/// dismissal while the install is in progress.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn close_winget_progress_window(app: tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("winget-progress") {
+        let _ = win.destroy();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Custom protocol handler – embedded Vite SPA
 // ---------------------------------------------------------------------------
@@ -393,12 +407,6 @@ async fn main() {
 
     // Set the ADB port.
     let _ = adb::ADB_PORT.set(ARGS.adb_port);
-
-    // Detect the launch-options modifier key (desktop only).
-    #[cfg(not(target_os = "android"))]
-    let open_shift_window = !ARGS.test && !ARGS.help && is_launch_modifier_held();
-
-    let browser_url = build_browser_url();
     
     // Add a jump list entry whenever the combination differs from defaults.
     let url_changed     = ARGS.url     != DEFAULT_URL;
@@ -474,10 +482,12 @@ async fn main() {
     let modifier_key_label = "Option (\u{2325})"; // ⌥
     #[cfg(all(not(target_os = "android"), not(target_os = "macos")))]
     let modifier_key_label = "Shift";
-    
-    if let Err(_) = crate::adb::adb_connect_or_start().await {
-        return;
-    }
+
+    // Detect the launch-options modifier key (desktop only).
+    #[cfg(not(target_os = "android"))]
+    let open_shift_window = !ARGS.test && !ARGS.help && is_launch_modifier_held();
+
+    let browser_url = build_browser_url();
 
     let builder = tauri::Builder::default()
         .manage(AdbBridge::new())
@@ -501,11 +511,6 @@ async fn main() {
                 } else if open_shift_window {
                     tauri_windows::create_shift_window(app, modifier_key_label);
                 } else {
-                    // Pre-warm the ADB connection in the background.
-                    tauri::async_runtime::spawn(async {
-                        let _ = crate::adb::adb_connect_or_start().await;
-                    });
-
                     let url = url::Url::parse(&browser_url)
                         .map(tauri::WebviewUrl::External)
                         .map_err(|e| e.to_string())?;
@@ -526,6 +531,7 @@ async fn main() {
         adb_close,
         get_help_text,
         launch_with_args,
+        close_winget_progress_window,
     ]);
 
     #[cfg(target_os = "android")]

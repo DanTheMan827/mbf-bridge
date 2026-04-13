@@ -93,12 +93,36 @@ pub mod internal_pages {
     pub const SHIFT: &str = "mbf://localhost/shift";
     pub const HELP: &str = "mbf://localhost/help";
     pub const TEST: &str = "mbf://localhost/test";
+    pub const WINGET_PROGRESS: &str = "mbf://localhost/winget-progress";
 }
 
-/// Creates the launch-options window (label = `"shift"`).
+/// Creates an internal window using a `tauri::App` reference.
 #[cfg(not(target_os = "android"))]
 pub fn create_internal_window(
     app: &tauri::App,
+    label: &str,
+    url: &str,
+    config: &InternalWindowConfig,
+) -> tauri::Result<tauri::WebviewWindow> {
+    create_internal_window_impl(app, label, url, config)
+}
+
+/// Creates an internal window using a `tauri::AppHandle` reference.
+/// Used when opening windows from async command handlers (e.g. winget progress).
+#[cfg(not(target_os = "android"))]
+pub fn create_internal_window_from_handle(
+    handle: &tauri::AppHandle,
+    label: &str,
+    url: &str,
+    config: &InternalWindowConfig,
+) -> tauri::Result<tauri::WebviewWindow> {
+    create_internal_window_impl(handle, label, url, config)
+}
+
+#[cfg(not(target_os = "android"))]
+fn create_internal_window_impl<M: tauri::Manager<tauri::Wry>>(
+    manager: &M,
+    label: &str,
     url: &str,
     config: &InternalWindowConfig,
 ) -> tauri::Result<tauri::WebviewWindow> {
@@ -114,8 +138,8 @@ pub fn create_internal_window(
     }
     
     let builder = tauri::WebviewWindowBuilder::new(
-        app,
-        "shift",
+        manager,
+        label,
         tauri::WebviewUrl::CustomProtocol(
             url::Url::parse(url).unwrap(),
         ),
@@ -133,7 +157,7 @@ pub fn create_internal_window(
         builder.initialization_script(&init_script)
     };
     
-    return builder.build();
+    builder.build()
 }
 
 #[cfg(not(target_os = "android"))]
@@ -146,7 +170,7 @@ pub fn create_shift_window(
         .set_title("Launch Options")
         .set_modifier_key(modifier_key);
 
-    let _ = create_internal_window(app, internal_pages::SHIFT, config);
+    let _ = create_internal_window(app, "shift", internal_pages::SHIFT, config);
 }
 
 #[cfg(not(target_os = "android"))]
@@ -155,7 +179,7 @@ pub fn create_help_window(app: &tauri::App) {
     let config = config
         .set_title("Help");
 
-    let _ = create_internal_window(app, internal_pages::HELP, config);
+    let _ = create_internal_window(app, "help", internal_pages::HELP, config);
 }
 
 #[cfg(not(target_os = "android"))]
@@ -166,5 +190,37 @@ pub fn create_test_window(app: &tauri::App) {
         .set_init_script(&crate::adb_bridge::INIT_SCRIPT)
         .set_size(1150.0, 768.0);
 
-    let _ = create_internal_window(app, internal_pages::TEST, config);
+    let _ = create_internal_window(app, "test", internal_pages::TEST, config);
+}
+
+/// Creates the winget-progress window (label = `"winget-progress"`).
+///
+/// The window is intentionally non-closeable: the user cannot dismiss it until
+/// the `winget-done` event is received by the React page, which then enables the
+/// close / retry UI.  Closure is triggered programmatically by the page itself.
+#[cfg(all(not(target_os = "android"), windows))]
+pub fn create_winget_progress_window(
+    handle: &tauri::AppHandle,
+) -> tauri::Result<tauri::WebviewWindow> {
+    use url::Url;
+
+    // Close-request prevention: the JS page drives its own dismissal after
+    // receiving the `winget-done` event, so we intercept OS close requests
+    // here and silently ignore them until the window destroys itself.
+    let win = tauri::WebviewWindowBuilder::new(
+        handle,
+        "winget-progress",
+        tauri::WebviewUrl::CustomProtocol(
+            Url::parse(internal_pages::WINGET_PROGRESS).unwrap(),
+        ),
+    )
+    .title("ModsBeforeFriday Bridge – Installing ADB")
+    .inner_size(700.0, 460.0)
+    .min_inner_size(500.0, 320.0)
+    .resizable(true)
+    .closable(false)
+    .devtools(cfg!(debug_assertions))
+    .build()?;
+
+    Ok(win)
 }

@@ -7,3 +7,8 @@ commands.allow = ["get_help_text"]
 identifier = "allow-launch-with-args"
 description = "Allows re-launching the application with custom arguments."
 commands.allow = ["launch_with_args"]
+
+[[permission]]
+identifier = "allow-close-winget-progress-window"
+description = "Allows the winget-progress window to close itself after installation completes."
+commands.allow = ["close_winget_progress_window"]
