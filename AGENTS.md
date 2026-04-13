@@ -186,8 +186,11 @@ Internal pages and their routes:
 ### Build commands
 
 ```sh
-# Standard release build (embed-adb enabled)
+# Standard release build (embed-adb enabled, terser minification, no source maps)
 cargo build --release
+
+# Debug build (no minification, full source maps embedded in dist/)
+cargo build
 
 # Release build without embedded ADB
 cargo build --release --no-default-features
@@ -195,8 +198,11 @@ cargo build --release --no-default-features
 # Cross-compile for a specific target (e.g. on macOS for Intel)
 cargo build --release --target x86_64-apple-darwin
 
-# Frontend only
+# Frontend only — release (terser, no source maps)
 cd ui && npm install && npm run build
+
+# Frontend only — debug (no minification, full source maps)
+cd ui && npm run build:debug
 ```
 
 ---
@@ -298,10 +304,23 @@ event → resolves/rejects.
 
 ## 6. Frontend (UI)
 
-**Stack**: React 18, TypeScript, Vite 8, React Router 6, xterm.js (`@xterm/xterm`),
+**Stack**: React 18, TypeScript, Vite 8 (Rolldown bundler), React Router 6, xterm.js (`@xterm/xterm`),
 `@yume-chan/adb`.
 
 **Output**: `ui/dist/` — static files embedded into the Rust binary at compile time.
+
+**Build modes** (selected by `--mode` flag, driven automatically from `build.rs` via the
+`PROFILE` env var):
+
+| Mode | npm script | Minifier | Source maps |
+|------|-----------|----------|-------------|
+| production (default / `cargo build --release`) | `build` | terser, 2 passes | none |
+| debug (`cargo build`) | `build:debug` | none | full (`.map` files) |
+
+**Terser release options**: `passes: 2`, `drop_console`, `drop_debugger`, `ecma: 2020`,
+`module: true`, `unsafe_arrows`, `unsafe_methods`, `toplevel`, all comments stripped,
+top-level name mangling.  Module preload polyfill is omitted (`modulePreload.polyfill: false`).
+Rolldown tree-shaking uses `moduleSideEffects: 'no-external'`.
 
 ### Pages
 

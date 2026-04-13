@@ -20,9 +20,21 @@ fn main() {
         assert!(status.success(), "`npm install` exited with {status}");
     }
 
+    // Select the build script based on the Cargo profile:
+    //   release → `npm run build`        (terser, no source maps)
+    //   debug   → `npm run build:debug`  (no minification, full source maps)
+    //
+    // Cargo sets the PROFILE env var automatically for build scripts.
+    let profile = std::env::var("PROFILE").unwrap_or_default();
+    let build_script = if profile == "release" { "build" } else { "build:debug" };
+
+    // Re-run this script when the Cargo profile changes (e.g. switching between
+    // `cargo build` and `cargo build --release`).
+    println!("cargo:rerun-if-env-changed=PROFILE");
+
     // Build the frontend bundle.
     let status = std::process::Command::new(npm)
-        .args(["run", "build"])
+        .args(["run", build_script])
         .current_dir(&ui_dir)
         .status()
         .expect("Failed to run `npm run build` in ui/");
