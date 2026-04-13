@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import shared from "../styles/shared.module.css";
 import styles from "./HelpCard.module.css";
 
@@ -111,14 +111,51 @@ export default function HelpCard() {
       .catch((e: unknown) => setHelpText(`(failed to load help: ${e})`));
   }, [invoke]);
   
+  // Parse help text into structure
+  const parsed = useMemo(() => parseHelp(helpText), [helpText]);
+
   return (
     <div className={`${shared.card} ${styles.helpFill}`}>
       <div className={shared.cardHeader}>
-        <span className={shared.cardTitle}>Available Arguments</span>
+        <span className={shared.cardTitle}>{parsed.title || "Available Arguments"}</span>
       </div>
       <div className={shared.cardBody}>
         <div className={styles.helpScroll}>
-          <pre className={styles.helpPre}>{helpText}</pre>
+          <div className={styles.helpSection}>
+            <table className={styles.helpTable}>
+              <tbody>
+                {parsed.sections.map((section, i) => (
+                  <>
+                    <tr>
+                      <td colSpan={2}>
+                        <div className={`${styles.helpSectionTitle} ${i > 0 ? '' : styles.noTopMargin}`}>{section.name}</div>
+                      </td>
+                    </tr>
+                    {section.options.length > 0 && section.options.map((opt, j) => (
+                      <tr key={j}>
+                        <td className={styles.helpOptNames}>
+                          {opt.short && <span className={styles.helpOptShort}>{opt.short}</span>}
+                          {opt.short && opt.long && <span>, </span>}
+                          {opt.long && <span className={styles.helpOptLong}>{opt.long}</span>}
+                          {opt.valueName && <span className={styles.helpOptValue}>&nbsp;&lt;{opt.valueName}&gt;</span>}
+                        </td>
+                        <td className={styles.helpOptDesc}>
+                          {opt.description}
+                          {opt.defaultValue && (
+                              <span className={styles.helpOptDefault}> [default: {opt.defaultValue}]</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Fallback for raw text if parsing fails */}
+          {parsed.sections.length === 0 && (
+            <pre className={styles.helpPre}>{helpText}</pre>
+          )}
         </div>
       </div>
     </div>
