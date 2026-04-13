@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useRef,
   useState,
 } from "react";
 import type { AdbServerClient } from "@yume-chan/adb";
@@ -104,24 +103,17 @@ interface FlowMeterProps {
 
 function FlowMeter({ inFlight }: FlowMeterProps) {
   return (
-    <div style={{ marginTop: "0.75rem" }}>
-      <div style={{ display: "flex", gap: 4 }}>
+    <div className={styles.flowMeter}>
+      <div className={styles.flowMeterRow}>
         {Array.from({ length: WINDOW_SIZE }, (_, i) => (
           <div
             key={i}
-            style={{
-              width: 18,
-              height: 18,
-              borderRadius: 3,
-              background: i < inFlight ? "var(--accent)" : "var(--border)",
-              transition: "background 0.2s",
-            }}
+            className={styles.bar}
+            data-active={String(i < inFlight)}
           />
         ))}
       </div>
-      <div
-        style={{ fontSize: "0.72rem", color: "var(--subtext)", marginTop: 4 }}
-      >
+      <div className={styles.flowMeterLabel}>
         In-flight: {inFlight} / {WINDOW_SIZE}
       </div>
     </div>
@@ -137,17 +129,11 @@ interface LogPaneProps {
 }
 
 function LogPane({ entries }: LogPaneProps) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (ref.current) {
-      ref.current.scrollTop = ref.current.scrollHeight;
-    }
-  }, [entries]);
-
+  // Entries are rendered newest-first inside a flex column-reverse container,
+  // which keeps the latest entry visible at the bottom without any JS scrolling.
   return (
-    <div className={shared.log} ref={ref}>
-      {entries.map((e) => (
+    <div className={shared.log}>
+      {[...entries].reverse().map((e) => (
         <div key={e.id}>
           <span className={shared.ts}>[{e.ts}] </span>
           <span className={shared[e.cls]}>{e.msg}</span>
@@ -163,21 +149,12 @@ function LogPane({ entries }: LogPaneProps) {
 
 const STATE_CONFIG: Record<
   AdbServerClient.ConnectionState,
-  { color: string; label: string }
+  { label: string }
 > = {
-  device:       { color: "var(--green)",  label: "Online"        },
-  unauthorized: { color: "var(--yellow)", label: "Unauthorized"  },
-  offline:      { color: "var(--subtext)", label: "Offline"      },
+  device:       { label: "Online"       },
+  unauthorized: { label: "Unauthorized" },
+  offline:      { label: "Offline"      },
 };
-
-function stateConfig(state: string) {
-  return (
-    STATE_CONFIG[state as AdbServerClient.ConnectionState] ?? {
-      color: "var(--subtext)",
-      label: state,
-    }
-  );
-}
 
 interface DevicesCardProps {
   enabled: boolean;
@@ -186,135 +163,65 @@ interface DevicesCardProps {
 function DevicesCard({ enabled }: DevicesCardProps) {
   const { devices, status, error } = useDeviceScanner(enabled);
 
-  const statusBadge = () => {
-    if (status === "tracking")
-      return { bg: "var(--green)", text: "Tracking" };
-    if (status === "connecting")
-      return { bg: "var(--yellow)", text: "Connecting…" };
-    if (status === "error")
-      return { bg: "var(--red)", text: "Error" };
-    return { bg: "var(--border)", text: "Idle" };
-  };
-
-  const badge = statusBadge();
-
   return (
     <div className={shared.card}>
-      <div className={shared.cardHeader} style={{ gap: "0.5rem" }}>
-        <span className={shared.cardTitle} style={{ flex: 1 }}>
+      <div className={`${shared.cardHeader} ${styles.devicesHeader}`}>
+        <span className={`${shared.cardTitle} ${styles.cardTitleFlex}`}>
           Live Devices
         </span>
-        <span
-          style={{
-            background: badge.bg,
-            color: "#fff",
-            borderRadius: 99,
-            fontSize: "0.65rem",
-            fontWeight: 700,
-            padding: "0.15rem 0.55rem",
-            letterSpacing: "0.03em",
-          }}
-        >
-          {badge.text}
+        <span className={styles.trackingBadge} data-status={status}>
+          {status === "tracking" ? "Tracking"
+            : status === "connecting" ? "Connecting…"
+            : status === "error" ? "Error"
+            : "Idle"}
         </span>
       </div>
       <div className={shared.cardBody}>
-        {error && (
-          <div
-            style={{
-              fontSize: "0.78rem",
-              color: "var(--red)",
-              marginBottom: "0.5rem",
-            }}
-          >
-            {error}
-          </div>
-        )}
+        {error && <div className={styles.deviceError}>{error}</div>}
 
         {devices.length === 0 ? (
-          <div style={{ fontSize: "0.82rem", color: "var(--subtext)" }}>
+          <div className={styles.deviceEmpty}>
             {status === "tracking"
               ? "No devices connected."
               : "Waiting for ADB server…"}
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            {devices.map((d) => {
-              const cfg = stateConfig(d.state);
-              return (
+          <div className={styles.deviceList}>
+            {devices.map((d) => (
+              <div
+                key={String(d.transportId)}
+                className={styles.deviceRow}
+              >
+                {/* Status dot */}
                 <div
-                  key={String(d.transportId)}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "auto 1fr auto",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                    padding: "0.45rem 0.6rem",
-                    borderRadius: "calc(var(--radius) - 2px)",
-                    background: "var(--surface-2)",
-                    border: "1px solid var(--border)",
-                  }}
-                >
-                  {/* Status dot */}
-                  <div
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: cfg.color,
-                      flexShrink: 0,
-                    }}
-                    title={cfg.label}
-                  />
+                  className={styles.deviceDot}
+                  data-state={d.state}
+                  title={STATE_CONFIG[d.state as AdbServerClient.ConnectionState]?.label ?? d.state}
+                />
 
-                  {/* Device info */}
-                  <div style={{ minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontFamily: "var(--mono)",
-                        fontSize: "0.8rem",
-                        fontWeight: 600,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                      title={d.serial}
-                    >
-                      {d.serial}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "0.7rem",
-                        color: "var(--subtext)",
-                        marginTop: "0.1rem",
-                      }}
-                    >
-                      {[d.model, d.product, d.device]
-                        .filter(Boolean)
-                        .join(" · ") || "—"}
-                      {" · "}
-                      <span style={{ fontFamily: "var(--mono)" }}>
-                        transport_id:{String(d.transportId)}
-                      </span>
-                    </div>
+                {/* Device info */}
+                <div className={styles.deviceInfo}>
+                  <div className={styles.deviceSerial} title={d.serial}>
+                    {d.serial}
                   </div>
-
-                  {/* State badge */}
-                  <span
-                    style={{
-                      fontSize: "0.65rem",
-                      fontWeight: 700,
-                      color: cfg.color,
-                      letterSpacing: "0.03em",
-                      textTransform: "uppercase",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {cfg.label}
-                  </span>
+                  <div className={styles.deviceMeta}>
+                    {[d.model, d.product, d.device].filter(Boolean).join(" · ") || "—"}
+                    {" · "}
+                    <span className={styles.mono}>
+                      transport_id:{String(d.transportId)}
+                    </span>
+                  </div>
                 </div>
-              );
-            })}
+
+                {/* State badge */}
+                <span
+                  className={styles.deviceStateBadge}
+                  data-state={d.state}
+                >
+                  {STATE_CONFIG[d.state as AdbServerClient.ConnectionState]?.label ?? d.state}
+                </span>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -341,7 +248,6 @@ export default function TestPage() {
   const [connections, setConnections] = useState<Map<string, ConnEntry>>(
     new Map(),
   );
-  const connectionsRef = useRef<Map<string, ConnEntry>>(new Map());
 
   const [versionResult, setVersionResult] = useState("–");
   const [multiResult, setMultiResult] = useState("–");
@@ -373,38 +279,36 @@ export default function TestPage() {
   }, []);
 
   // ── Connection helpers ──────────────────────────────────────────────────
-  const refreshConnections = useCallback(() => {
-    setConnections(new Map(connectionsRef.current));
-  }, []);
-
   const openConnection = useCallback(async () => {
     if (!bridge) return;
     log("info", "Connecting…");
     try {
       const conn = await bridge.connect();
       log("info", `Connected: ${conn.id}`);
-      connectionsRef.current.set(conn.id, { conn, open: true });
+      setConnections((prev) => new Map(prev).set(conn.id, { conn, open: true }));
 
       conn.onData((data) => {
         log("rx", `← [${conn.id.slice(0, 8)}…] ${hexDump(data)}`);
       });
       conn.onClose(() => {
         log("info", `Closed: ${conn.id.slice(0, 8)}…`);
-        const entry = connectionsRef.current.get(conn.id);
-        if (entry) {
-          connectionsRef.current.set(conn.id, { ...entry, open: false });
-          refreshConnections();
-        }
+        setConnections((prev) => {
+          const next = new Map(prev);
+          const entry = next.get(conn.id);
+          if (entry) next.set(conn.id, { ...entry, open: false });
+          return next;
+        });
       });
-
-      refreshConnections();
     } catch (e) {
       log("err", `connect() failed: ${(e as Error).message}`);
     }
-  }, [bridge, log, refreshConnections]);
+  }, [bridge, log]);
 
   const closeAll = useCallback(() => {
-    connectionsRef.current.forEach(({ conn }) => conn.close());
+    setConnections((prev) => {
+      prev.forEach(({ conn }) => conn.close());
+      return prev;
+    });
   }, []);
 
   // ── ADB version test ────────────────────────────────────────────────────
@@ -552,18 +456,8 @@ export default function TestPage() {
   return (
     <div className={styles.page}>
       <div>
-        <h1 style={{ fontSize: "1.4rem", marginBottom: "0.2rem" }}>
-          MBF Bridge – Test Page
-        </h1>
-        <h2
-          style={{
-            fontSize: "1rem",
-            fontWeight: 400,
-            color: "var(--subtext)",
-          }}
-        >
-          Tauri 2 ADB IPC bridge validation
-        </h2>
+        <h1 className={styles.pageTitle}>MBF Bridge – Test Page</h1>
+        <h2 className={styles.pageSubtitle}>Tauri 2 ADB IPC bridge validation</h2>
       </div>
 
       <div className={`${shared.banner} ${shared[bannerCls]}`}>{bannerMsg}</div>
@@ -595,46 +489,18 @@ export default function TestPage() {
                 Close all
               </button>
             </div>
-            <div style={{ minHeight: "3rem" }}>
+            <div className={styles.connList}>
               {connArray.map(([id, entry]) => (
-                <div
-                  key={id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                    padding: "0.35rem 0",
-                    borderBottom: "1px solid var(--border)",
-                    fontSize: "0.82rem",
-                  }}
-                >
+                <div key={id} className={styles.connRow}>
                   <div
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: entry.open
-                        ? "var(--green)"
-                        : "var(--subtext)",
-                      flexShrink: 0,
-                    }}
+                    className={styles.connDot}
+                    data-open={String(entry.open)}
                   />
-                  <span
-                    style={{
-                      flex: 1,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      fontFamily: "var(--mono)",
-                      fontSize: "0.7rem",
-                      color: "var(--subtext)",
-                    }}
-                    title={id}
-                  >
+                  <span className={styles.connId} title={id}>
                     {id.slice(0, 8)}…
                   </span>
                   <button
-                    className={`${shared.btn} ${shared.danger}`}
-                    style={{ padding: "0.2rem 0.55rem", fontSize: "0.75rem" }}
+                    className={`${shared.btn} ${shared.danger} ${styles.closeBtn}`}
                     disabled={!entry.open}
                     onClick={() => entry.conn.close()}
                   >
@@ -652,13 +518,7 @@ export default function TestPage() {
             <span className={shared.cardTitle}>ADB Version Test</span>
           </div>
           <div className={shared.cardBody}>
-            <p
-              style={{
-                fontSize: "0.82rem",
-                color: "var(--subtext)",
-                marginBottom: "0.75rem",
-              }}
-            >
+            <p className={styles.cardDesc}>
               Sends <code>host:version</code> to the ADB server and parses the
               reply.
             </p>
@@ -671,15 +531,7 @@ export default function TestPage() {
                 Run test
               </button>
             </div>
-            <div
-              style={{
-                fontSize: "0.85rem",
-                minHeight: "1.2em",
-                marginTop: "0.25rem",
-              }}
-            >
-              {versionResult}
-            </div>
+            <div className={styles.testResult}>{versionResult}</div>
           </div>
         </div>
 
@@ -689,13 +541,7 @@ export default function TestPage() {
             <span className={shared.cardTitle}>Multi-Connection Test</span>
           </div>
           <div className={shared.cardBody}>
-            <p
-              style={{
-                fontSize: "0.82rem",
-                color: "var(--subtext)",
-                marginBottom: "0.75rem",
-              }}
-            >
+            <p className={styles.cardDesc}>
               Opens 3 connections simultaneously, runs the version test on each,
               verifies all succeed independently.
             </p>
@@ -708,15 +554,7 @@ export default function TestPage() {
                 Run (3 connections)
               </button>
             </div>
-            <div
-              style={{
-                fontSize: "0.82rem",
-                marginTop: "0.5rem",
-                minHeight: "1.2em",
-              }}
-            >
-              {multiResult}
-            </div>
+            <div className={styles.testResult2}>{multiResult}</div>
           </div>
         </div>
 
@@ -726,13 +564,7 @@ export default function TestPage() {
             <span className={shared.cardTitle}>Back-Pressure Test</span>
           </div>
           <div className={shared.cardBody}>
-            <p
-              style={{
-                fontSize: "0.82rem",
-                color: "var(--subtext)",
-                marginBottom: "0.75rem",
-              }}
-            >
+            <p className={styles.cardDesc}>
               Streams ADB <code>host:devices-l</code> with an artificial 150 ms
               delay per chunk. The meter shows in-flight permits (should stay ≤
               8).
@@ -747,14 +579,7 @@ export default function TestPage() {
               </button>
             </div>
             <FlowMeter inFlight={backpressureStats.inFlight} />
-            <div
-              style={{
-                display: "flex",
-                gap: "1rem",
-                flexWrap: "wrap",
-                marginTop: "0.6rem",
-              }}
-            >
+            <div className={styles.statsRow}>
               {(
                 [
                   ["Chunks", backpressureStats.chunks],
@@ -762,21 +587,9 @@ export default function TestPage() {
                   ["Max in-flight", backpressureStats.max],
                 ] as const
               ).map(([label, val]) => (
-                <div key={label} style={{ textAlign: "center" }}>
-                  <div
-                    style={{
-                      fontSize: "1.3rem",
-                      fontWeight: 700,
-                      lineHeight: 1.2,
-                    }}
-                  >
-                    {val}
-                  </div>
-                  <div
-                    style={{ fontSize: "0.7rem", color: "var(--subtext)" }}
-                  >
-                    {label}
-                  </div>
+                <div key={label} className={styles.statBlock}>
+                  <div className={styles.statValue}>{val}</div>
+                  <div className={styles.statLabel}>{label}</div>
                 </div>
               ))}
             </div>
@@ -785,12 +598,12 @@ export default function TestPage() {
       </div>
 
       {/* Event log */}
-      <div className={shared.card} style={{ marginTop: "auto" }}>
+      <div className={`${shared.card} ${styles.logCard}`}>
         <div className={shared.cardHeader}>
           <span className={shared.cardTitle}>Event Log</span>
         </div>
         <div className={shared.cardBody}>
-          <div className={shared.btnRow} style={{ marginBottom: "0.5rem" }}>
+          <div className={`${shared.btnRow} ${styles.logBtnRow}`}>
             <button className={`${shared.btn} ${shared.secondary}`} onClick={clearLog}>
               Clear
             </button>

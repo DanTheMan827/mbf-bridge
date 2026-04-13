@@ -18,7 +18,9 @@ panic = "abort"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+include_dir = "0.7.4"
 lazy_static = "1.5.0"
+mime_guess = "2"
 serde = { version = "1.0.219", features = ["derive"] }
 shlex = "1"
 tauri = { version = "2", features = ["devtools"] }
@@ -29,12 +31,21 @@ uuid = { version = "1", features = ["v4"] }
 open = "5.3.3"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
-single-instance = "0.3.3"
 rfd = "0.17.2"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["consoleapi", "fileapi", "winbase", "processenv", "winuser"] }
 winreg = "0.55.0"
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_Shell_PropertiesSystem",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11 = { version = "2.21.0", features = ["xlib"] }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

@@ -24,18 +24,21 @@ mod adb;
 mod adb_bridge;
 mod config;
 mod console;
+mod jump_list;
 
 use adb_bridge::AdbBridge;
 use clap::{CommandFactory, Parser};
 use config::{DEFAULT_GAME_ID, DEFAULT_URL};
+use include_dir::{include_dir, Dir};
 use lazy_static::lazy_static;
 use urlencoding::encode as url_encode;
 
 #[cfg(not(target_os = "android"))]
-use single_instance::SingleInstance;
-
-#[cfg(not(target_os = "android"))]
 use rfd::FileDialog;
+
+/// The entire compiled Vite `dist/` folder embedded at compile time.
+/// Served via the `mbf://` custom protocol so the app can run offline.
+static UI_DIR: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/ui/dist");
 
 // ---------------------------------------------------------------------------
 // CLI arguments
@@ -82,19 +85,6 @@ lazy_static! {
 }
 
 // ---------------------------------------------------------------------------
-// Single-instance guard (desktop only)
-// ---------------------------------------------------------------------------
-
-/// Holds the `SingleInstance` guard for the lifetime of the application so
-/// that the named mutex / lock-file is not released prematurely.
-///
-/// The inner `Option` lets `launch_with_args` explicitly release the guard
-/// before spawning the new process, eliminating the race window where both
-/// instances briefly hold the same lock.
-#[cfg(not(target_os = "android"))]
-struct SingleInstanceState(std::sync::Mutex<Option<SingleInstance>>);
-
-// ---------------------------------------------------------------------------
 // Modifier-key detection (desktop only)
 // ---------------------------------------------------------------------------
 
@@ -123,6 +113,27 @@ fn is_launch_modifier_held() -> bool {
         }
         const K_CG_EVENT_FLAG_MASK_ALTERNATE: u64 = 0x0008_0000;
         return unsafe { CGEventSourceFlagsState(1) & K_CG_EVENT_FLAG_MASK_ALTERNATE != 0 };
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Use X11's XQueryKeymap to sample the current keyboard state.
+        // Keycodes for Shift on most keyboards: Left Shift = 50, Right Shift = 62.
+        use x11::xlib::{Display, XCloseDisplay, XOpenDisplay, XQueryKeymap};
+        unsafe {
+            let display: *mut Display = XOpenDisplay(std::ptr::null());
+            if display.is_null() {
+                return false;
+            }
+            let mut keys = [0i8; 32];
+            XQueryKeymap(display, keys.as_mut_ptr());
+            XCloseDisplay(display);
+            // Keycode 50 = Left Shift, keycode 62 = Right Shift.
+            // Each bit in `keys` represents one keycode: keys[kc/8] bit (kc%8).
+            let left_shift = (keys[50 / 8] >> (50 % 8)) & 1;
+            let right_shift = (keys[62 / 8] >> (62 % 8)) & 1;
+            return left_shift != 0 || right_shift != 0;
+        }
     }
 
     #[allow(unreachable_code)]
@@ -200,9 +211,9 @@ async fn adb_close(id: String, bridge: tauri::State<'_, AdbBridge>) -> Result<()
 
 /// Returns the formatted clap help text.
 ///
-/// Access is restricted to the `shift` window via
-/// `capabilities/shift_launch.json` — it is not callable from the main MBF
-/// app or any external origin.
+/// Access is restricted to the `shift` and `help` windows via their
+/// respective capability files — it is not callable from the main MBF app
+/// or any external origin.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn get_help_text() -> String {
@@ -212,9 +223,8 @@ fn get_help_text() -> String {
 
 /// Re-launches the application with the provided shell-style argument string.
 ///
-/// The single-instance guard is explicitly released before the child process
-/// is spawned so the new instance can acquire the lock without racing against
-/// this process's exit.
+/// Also records the launch command in the Windows taskbar jump list so the
+/// user can re-run it quickly without opening the shift window again.
 ///
 /// Access is restricted to the `shift` window via
 /// `capabilities/shift_launch.json`.
@@ -224,7 +234,6 @@ async fn launch_with_args(
     args: String,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    use tauri::Manager;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
 
     let parsed: Vec<String> = if args.trim().is_empty() {
@@ -233,12 +242,20 @@ async fn launch_with_args(
         shlex::split(&args).unwrap_or_default()
     };
 
-    // Release the single-instance guard before spawning the child process so
-    // the new instance can acquire the lock immediately without a race.
+    // If the launch has custom args that load a non-embedded (external) URL,
+    // add it to the Windows taskbar jump list so it can be quickly relaunched.
+    #[cfg(windows)]
     {
-        let state = app.state::<SingleInstanceState>();
-        let mut guard = state.0.lock().unwrap();
-        *guard = None;
+        let has_custom_url = parsed.windows(2).any(|w| w[0] == "--url");
+        if !parsed.is_empty() && has_custom_url {
+            let title = format!("Launch: {}", args.trim());
+            let short_title = if title.len() > 60 {
+                format!("{}…", &title[..59])
+            } else {
+                title.clone()
+            };
+            jump_list::add_tasks(&[(&short_title, args.trim())]);
+        }
     }
 
     std::process::Command::new(&exe)
@@ -248,6 +265,40 @@ async fn launch_with_args(
 
     app.exit(0);
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Custom protocol handler – embedded Vite SPA
+// ---------------------------------------------------------------------------
+
+fn serve_embedded(req: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
+    // Strip the scheme + authority to get a relative path.
+    // e.g. "mbf://localhost/assets/index.js" → "assets/index.js"
+    let url = req.uri().path().trim_start_matches('/');
+
+    // Look up the file in the embedded dist directory.  Fall back to
+    // `index.html` for any unrecognised path so React Router can handle it.
+    let (body, mime) = match UI_DIR.get_file(url) {
+        Some(f) => {
+            let mime = mime_guess::from_path(url)
+                .first_raw()
+                .unwrap_or("application/octet-stream");
+            (f.contents().to_vec(), mime)
+        }
+        None => {
+            let html = UI_DIR
+                .get_file("index.html")
+                .map(|f| f.contents().to_vec())
+                .unwrap_or_default();
+            (html, "text/html; charset=utf-8")
+        }
+    };
+
+    tauri::http::Response::builder()
+        .header("Content-Type", mime)
+        .status(200)
+        .body(body)
+        .unwrap()
 }
 
 // ---------------------------------------------------------------------------
@@ -271,9 +322,6 @@ fn create_app_window(
         .min_inner_size(800.0, 600.0)
         .on_download(|_window, download| {
             if let tauri::webview::DownloadEvent::Requested { url, destination } = download {
-                // Extract the suggested filename from the URL path, decode any
-                // percent-encoded characters, and fall back to "download" when
-                // the URL has no useful file segment.
                 let raw_name = url
                     .path_segments()
                     .and_then(|s| s.last())
@@ -293,7 +341,7 @@ fn create_app_window(
                         *destination = path;
                         return true;
                     }
-                    None => return false, // User cancelled
+                    None => return false,
                 }
             }
             true
@@ -305,23 +353,17 @@ fn create_app_window(
             if url_str.starts_with(main_url) {
                 return true;
             }
-            
             if url_str.starts_with("http://") || url_str.starts_with("https://") {
-                // Open external links in the default browser.
                 let _ = open::that(url_str);
                 return false;
             }
-            
-            return false;
+            false
         })
         .on_new_window(move |nav_url, _features| {
             let url_str = nav_url.as_str();
-            
             if url_str.starts_with("http://") || url_str.starts_with("https://") {
-                // Open external links in the default browser.
                 let _ = open::that(url_str);
             }
-            
             tauri::webview::NewWindowResponse::Deny
         });
 
@@ -329,15 +371,11 @@ fn create_app_window(
 }
 
 /// Creates the launch-options window (label = `"shift"`).
-///
-/// The `modifier_key` string is injected as `window.__mbfModifierKey` so the
-/// page can display the correct key name for the current platform.
 #[cfg(not(target_os = "android"))]
 fn create_shift_window(
     app: &tauri::App,
     modifier_key: &str,
 ) -> tauri::Result<tauri::WebviewWindow> {
-    // Encode the modifier key label as a JS string literal.
     let modifier_key_json = format!(
         "\"{}\"",
         modifier_key.replace('\\', "\\\\").replace('"', "\\\"")
@@ -360,6 +398,24 @@ fn create_shift_window(
     .build()
 }
 
+/// Creates the help window (label = `"help"`).
+#[cfg(not(target_os = "android"))]
+fn create_help_window(app: &tauri::App) -> tauri::Result<tauri::WebviewWindow> {
+    tauri::WebviewWindowBuilder::new(
+        app,
+        "help",
+        tauri::WebviewUrl::CustomProtocol(
+            url::Url::parse("mbf://localhost/help").unwrap(),
+        ),
+    )
+    .title("ModsBeforeFriday Bridge – Help")
+    .inner_size(760.0, 600.0)
+    .min_inner_size(500.0, 400.0)
+    .resizable(true)
+    .devtools(cfg!(debug_assertions))
+    .build()
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -369,38 +425,21 @@ fn main() {
     #[cfg(all(not(debug_assertions), windows))]
     let _allocated_console = (ARGS.console || ARGS.help) && console::allocate_console();
 
-    // Early help output.
+    // --help: open a React help window instead of printing to a console.
+    // On debug builds (where the console is always present) we also print to
+    // stdout for convenience.
+    #[cfg(debug_assertions)]
     if ARGS.help {
         let mut cmd = Args::command();
         println!("{}", cmd.render_help());
-        #[cfg(all(not(debug_assertions), windows))]
-        {
-            use std::io;
-            println!("Press Enter to exit...");
-            let _ = io::stdin().read_line(&mut String::new());
-        }
-        return;
     }
 
     // Set the ADB port.
     let _ = adb::ADB_PORT.set(ARGS.adb_port);
 
-    // Single-instance guard (desktop only).  Stored in Tauri state so the
-    // lock is held for the full lifetime of the process and can be explicitly
-    // released by `launch_with_args` before spawning a child.
-    #[cfg(not(target_os = "android"))]
-    let single_instance = {
-        let single = SingleInstance::new("ModsBeforeFriday Bridge").unwrap();
-        if !single.is_single() {
-            println!("Another instance is already running.");
-            return;
-        }
-        single
-    };
-
     // Detect the launch-options modifier key (desktop only).
     #[cfg(not(target_os = "android"))]
-    let open_shift_window = !ARGS.test && is_launch_modifier_held();
+    let open_shift_window = !ARGS.test && !ARGS.help && is_launch_modifier_held();
 
     let browser_url = build_browser_url();
 
@@ -420,26 +459,21 @@ fn main() {
     let builder = tauri::Builder::default()
         .manage(AdbBridge::new())
         // Serve the embedded React SPA at mbf://localhost/<path>.
-        // vite-plugin-singlefile produces a single self-contained index.html,
-        // so every path returns the same file and React Router handles routing
-        // client-side (/test → TestPage, /shift → ShiftPage).
-        .register_uri_scheme_protocol("mbf", |_app, _req| {
-            tauri::http::Response::builder()
-                .header("Content-Type", "text/html; charset=utf-8")
-                .status(200)
-                .body(include_bytes!("../ui/dist/index.html").to_vec())
-                .unwrap()
-        })
+        // The dist/ directory is embedded via `include_dir!` so every file is
+        // available.  Unrecognised paths fall back to index.html so that React
+        // Router can handle client-side routing (/test, /shift, /help …).
+        .register_uri_scheme_protocol("mbf", |_app, req| serve_embedded(req))
         .setup(move |app| {
-            // macOS: run as an accessory app (no Dock icon) so the app lives
-            // exclusively in the menu bar.
+            // macOS: run as an accessory app (no Dock icon).
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             // Create the appropriate window (Android manages its own activity).
             #[cfg(not(target_os = "android"))]
             {
-                if open_shift_window {
+                if ARGS.help {
+                    create_help_window(app)?;
+                } else if open_shift_window {
                     create_shift_window(app, modifier_key_label)?;
                 } else {
                     // Pre-warm the ADB connection in the background.
@@ -463,20 +497,16 @@ fn main() {
             Ok(())
         });
 
-    // Manage single-instance guard and register all commands (desktop only).
+    // Register all commands (desktop only).
     #[cfg(not(target_os = "android"))]
-    let builder = builder
-        .manage(SingleInstanceState(std::sync::Mutex::new(Some(
-            single_instance,
-        ))))
-        .invoke_handler(tauri::generate_handler![
-            adb_connect,
-            adb_write,
-            adb_ack,
-            adb_close,
-            get_help_text,
-            launch_with_args,
-        ]);
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        adb_connect,
+        adb_write,
+        adb_ack,
+        adb_close,
+        get_help_text,
+        launch_with_args,
+    ]);
 
     #[cfg(target_os = "android")]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -490,3 +520,4 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");
 }
+
