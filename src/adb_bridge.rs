@@ -121,9 +121,8 @@ async fn handle_no_adb(app: &tauri::AppHandle) -> Option<tokio::net::TcpStream> 
         .unwrap_or(false);
 
         if !wants_install {
-            // User explicitly declined – respect the choice and return.
-            return None;
-        }
+            // User explicitly declined – fall through to the manual-install dialog.
+        } else {
 
         // Open the non-closeable progress window before starting winget.
         let progress_win =
@@ -210,7 +209,8 @@ async fn handle_no_adb(app: &tauri::AppHandle) -> Option<tokio::net::TcpStream> 
         // Installation failed or ADB still unreachable.
         // The progress window already displayed the failure; skip the generic dialog.
         return None;
-    }
+        } // else wants_install
+    } // if is_winget_available()
 
     // ── Generic fallback: ask the user to install ADB manually ──────────
     tokio::task::spawn_blocking(|| {
