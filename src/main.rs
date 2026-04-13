@@ -554,9 +554,10 @@ fn handle_adb_unavailable(app: &tauri::App, browser_url: &str) {
 
 /// Opens the main app window after a successful winget install.
 ///
-/// Called by the `WingetProgressPage` "Continue" button.  Retrieves the
-/// pending URL from Tauri state, destroys the winget-progress window, and
-/// creates the main `WebviewWindow`.
+/// Called by the `WingetProgressPage` "Continue" button.  Mirrors the
+/// normal startup path: starts the ADB server (winget installed the binary
+/// but did not start the daemon), destroys the progress window, then creates
+/// the main `WebviewWindow` exactly as `setup` would have done.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 async fn open_main_window(app: tauri::AppHandle) -> Result<(), String> {
@@ -564,6 +565,12 @@ async fn open_main_window(app: tauri::AppHandle) -> Result<(), String> {
         .try_state::<PendingMainWindow>()
         .map(|s| s.url.clone())
         .ok_or_else(|| "No pending main window URL in state".to_string())?;
+
+    // Start ADB.  winget installed the binary but did not launch the daemon;
+    // this mirrors what the startup ADB gate does in setup.
+    crate::adb::adb_connect_or_start()
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Close the non-closeable progress window programmatically.
     if let Some(win) = app.get_webview_window("winget-progress") {
