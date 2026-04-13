@@ -12,3 +12,8 @@ commands.allow = ["launch_with_args"]
 identifier = "allow-close-winget-progress-window"
 description = "Allows the winget-progress window to close itself after installation completes."
 commands.allow = ["close_winget_progress_window"]
+
+[[permission]]
+identifier = "allow-open-main-window"
+description = "Allows the winget-progress window to open the main app window after a successful ADB install."
+commands.allow = ["open_main_window"]
