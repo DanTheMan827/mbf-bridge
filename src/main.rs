@@ -232,6 +232,13 @@ fn get_help_text() -> String {
 /// Also records the launch command in the Windows taskbar jump list so the
 /// user can re-run it quickly without opening the shift window again.
 ///
+/// A jump list entry is keyed on the **combination** of `--url`, `--dev`, and
+/// `--game-id`.  Whenever at least one of those three values differs from its
+/// compiled-in default, an entry is added whose argument string is built from
+/// only those three flags (other flags like `--adb-port` are intentionally
+/// excluded so that the jump list stays focused on "launch this specific MBF
+/// configuration").
+///
 /// Access is restricted to the `shift` window via
 /// `capabilities/shift_launch.json`.
 #[cfg(not(target_os = "android"))]
@@ -248,19 +255,79 @@ async fn launch_with_args(
         shlex::split(&args).unwrap_or_default()
     };
 
-    // If the launch has custom args that load a non-embedded (external) URL,
-    // add it to the Windows taskbar jump list so it can be quickly relaunched.
+    // Extract the three jump-list key values from the parsed argument vector.
     #[cfg(windows)]
     {
-        let has_custom_url = parsed.iter().any(|arg| arg == "--url");
-        if !parsed.is_empty() && has_custom_url {
-            let title = format!("Launch: {}", args.trim());
-            let short_title = if title.len() > 60 {
-                format!("{}…", &title[..59])
+        /// Walk a `&[String]` looking for `--flag <value>` and return the value.
+        fn extract_flag<'a>(parsed: &'a [String], flag: &str) -> Option<&'a str> {
+            parsed
+                .windows(2)
+                .find(|w| w[0] == flag)
+                .map(|w| w[1].as_str())
+        }
+
+        let url = extract_flag(&parsed, "--url").unwrap_or(DEFAULT_URL);
+        let dev = parsed.iter().any(|a| a == "--dev");
+        let game_id = extract_flag(&parsed, "--game-id").unwrap_or(DEFAULT_GAME_ID);
+
+        // Add a jump list entry whenever the combination differs from defaults.
+        let url_changed     = url     != DEFAULT_URL;
+        let dev_changed     = dev;
+        let game_id_changed = game_id != DEFAULT_GAME_ID;
+
+        if url_changed || dev_changed || game_id_changed {
+            // Build canonical args string from only the three key flags.
+            let mut entry_args: Vec<String> = Vec::new();
+            if url_changed {
+                entry_args.push(format!("--url {}", shlex::try_quote(url).unwrap_or(url.into())));
+            }
+            if dev_changed {
+                entry_args.push("--dev".to_owned());
+            }
+            if game_id_changed {
+                entry_args.push(format!("--game-id {}", shlex::try_quote(game_id).unwrap_or(game_id.into())));
+            }
+            let entry_arg_str = entry_args.join(" ");
+
+            // Build a human-readable title: URL (or default label) + badges.
+            let url_label = if url_changed {
+                // Keep only the host + first path segment for brevity.
+                url::Url::parse(url)
+                    .ok()
+                    .and_then(|u| {
+                        let host = u.host_str().unwrap_or(url).to_owned();
+                        let first_seg = u.path_segments()
+                            .and_then(|mut s| s.next().filter(|p| !p.is_empty()))
+                            .unwrap_or("");
+                        if first_seg.is_empty() {
+                            Some(host)
+                        } else {
+                            Some(format!("{}/{}", host, first_seg))
+                        }
+                    })
+                    .unwrap_or_else(|| url.to_owned())
             } else {
-                title.clone()
+                "MBF".to_owned()
             };
-            jump_list::add_tasks(&[(&short_title, args.trim())]);
+
+            let mut badges: Vec<&str> = Vec::new();
+            if dev_changed     { badges.push("dev"); }
+            if game_id_changed { badges.push(game_id); }
+
+            let title = if badges.is_empty() {
+                url_label
+            } else {
+                format!("{} [{}]", url_label, badges.join(", "))
+            };
+
+            // Truncate to 60 chars to stay within jump list display limits.
+            let short_title = if title.chars().count() > 60 {
+                format!("{}…", title.chars().take(59).collect::<String>())
+            } else {
+                title
+            };
+
+            jump_list::add_tasks(&[(&short_title, &entry_arg_str)]);
         }
     }
 
