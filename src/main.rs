@@ -572,17 +572,21 @@ async fn open_main_window(app: tauri::AppHandle) -> Result<(), String> {
         .await
         .map_err(|e| e.to_string())?;
 
-    // Close the non-closeable progress window programmatically.
-    if let Some(win) = app.get_webview_window("winget-progress") {
-        let _ = win.destroy().ok();
-    }
-
     let webview_url = url::Url::parse(&url)
         .map(tauri::WebviewUrl::External)
         .map_err(|e| e.to_string())?;
 
+    // Create the main window BEFORE destroying the progress window.
+    // Tauri exits when the last window closes; if we destroy the progress
+    // window first there is a brief zero-window gap that causes the app to
+    // exit before the new window appears.
     create_app_window(&app, webview_url, &crate::adb_bridge::INIT_SCRIPT)
         .map_err(|e| e.to_string())?;
+
+    // Now that the main window exists it is safe to close the progress window.
+    if let Some(win) = app.get_webview_window("winget-progress") {
+        let _ = win.destroy().ok();
+    }
 
     Ok(())
 }
