@@ -1,4 +1,4 @@
-/* TestPage – page-level layout classes */
+/* TestPage – page-level and component-specific classes */
 
 .page {
   padding: 1.5rem;
@@ -13,3 +13,138 @@
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
   gap: 1rem;
 }
+
+/* ── Page header ─────────────────────────────────────────────── */
+
+.pageTitle    { font-size: 1.4rem; margin-bottom: 0.2rem; }
+.pageSubtitle { font-size: 1rem; font-weight: 400; color: var(--subtext); }
+
+/* ── FlowMeter ───────────────────────────────────────────────── */
+
+.flowMeter      { margin-top: 0.75rem; }
+.flowMeterRow   { display: flex; gap: 4px; }
+
+.bar {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  background: var(--border);
+  transition: background 0.2s;
+}
+.bar[data-active="true"] { background: var(--accent); }
+
+.flowMeterLabel { font-size: 0.72rem; color: var(--subtext); margin-top: 4px; }
+
+/* ── DevicesCard ─────────────────────────────────────────────── */
+
+.devicesHeader { gap: 0.5rem; }
+.cardTitleFlex { flex: 1; }
+
+.trackingBadge {
+  color: #fff;
+  border-radius: 99px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.15rem 0.55rem;
+  letter-spacing: 0.03em;
+}
+.trackingBadge[data-status="tracking"]  { background: var(--green); }
+.trackingBadge[data-status="connecting"]{ background: var(--yellow); color: var(--text); }
+.trackingBadge[data-status="error"]     { background: var(--red); }
+.trackingBadge[data-status="idle"]      { background: var(--border); color: var(--text); }
+
+.deviceError { font-size: 0.78rem; color: var(--red); margin-bottom: 0.5rem; }
+.deviceEmpty { font-size: 0.82rem; color: var(--subtext); }
+.deviceList  { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.deviceRow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.deviceDot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.deviceDot[data-state="device"]       { background: var(--green); }
+.deviceDot[data-state="unauthorized"] { background: var(--yellow); }
+.deviceDot[data-state="offline"]      { background: var(--subtext); }
+
+.deviceInfo   { min-width: 0; }
+.deviceSerial {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.deviceMeta {
+  font-size: 0.7rem;
+  color: var(--subtext);
+  margin-top: 0.1rem;
+}
+.mono { font-family: var(--mono); }
+
+.deviceStateBadge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.deviceStateBadge[data-state="device"]       { color: var(--green); }
+.deviceStateBadge[data-state="unauthorized"] { color: var(--yellow); }
+.deviceStateBadge[data-state="offline"]      { color: var(--subtext); }
+
+/* ── Connections ─────────────────────────────────────────────── */
+
+.connList { min-height: 3rem; }
+
+.connRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+
+.connDot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.connDot[data-open="true"]  { background: var(--green); }
+.connDot[data-open="false"] { background: var(--subtext); }
+
+.connId {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--subtext);
+}
+
+.closeBtn { padding: 0.2rem 0.55rem; font-size: 0.75rem; }
+
+/* ── Card description ────────────────────────────────────────── */
+
+.cardDesc { font-size: 0.82rem; color: var(--subtext); margin-bottom: 0.75rem; }
+
+/* ── Test result labels ──────────────────────────────────────── */
+
+.testResult  { font-size: 0.85rem; min-height: 1.2em; margin-top: 0.25rem; }
+.testResult2 { font-size: 0.82rem; min-height: 1.2em; margin-top: 0.5rem; }
+
+/* ── Back-pressure stats ─────────────────────────────────────── */
+
+.statsRow  { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.6rem; }
+.statBlock { text-align: center; }
+.statValue { font-size: 1.3rem; font-weight: 700; line-height: 1.2; }
+.statLabel { font-size: 0.7rem; color: var(--subtext); }
+
+/* ── Event log card ──────────────────────────────────────────── */
+
+.logCard   { margin-top: auto; }
+.logBtnRow { margin-bottom: 0.5rem; }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import shared from "../styles/shared.module.css";
 import styles from "./ShiftPage.module.css";
 
@@ -25,7 +25,6 @@ export default function ShiftPage() {
     cls: "",
   });
   const [launching, setLaunching] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Load help text via Tauri IPC.
   useEffect(() => {
@@ -74,20 +73,8 @@ export default function ShiftPage() {
   return (
     <div className={styles.page}>
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <header style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
-        <div
-          aria-hidden
-          style={{
-            width: "2.25rem",
-            height: "2.25rem",
-            borderRadius: 6,
-            background: "var(--accent)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-          }}
-        >
+      <header className={styles.header}>
+        <div aria-hidden className={styles.logoIcon}>
           {/* Play icon */}
           <svg
             viewBox="0 0 24 24"
@@ -100,10 +87,8 @@ export default function ShiftPage() {
           </svg>
         </div>
         <div>
-          <h1 style={{ fontSize: "1.1rem", fontWeight: 700, lineHeight: 1.25 }}>
-            ModsBeforeFriday Bridge
-          </h1>
-          <p style={{ fontSize: "0.8rem", color: "var(--subtext)", marginTop: "0.2rem" }}>
+          <h1 className={styles.pageTitle}>ModsBeforeFriday Bridge</h1>
+          <p className={styles.pageSubtitle}>
             Hold <kbd>{modifierKey}</kbd> at startup to open this window.
           </p>
         </div>
@@ -116,23 +101,9 @@ export default function ShiftPage() {
         </div>
         <div className={shared.cardBody}>
           <div
-            style={{
-              maxHeight: 220,
-              overflowY: "auto",
-              borderRadius: "calc(var(--radius) - 2px)",
-            }}
+            className={styles.helpScroll}
           >
-            <pre
-              style={{
-                fontFamily: "var(--mono)",
-                fontSize: "0.775rem",
-                lineHeight: 1.65,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-              }}
-            >
-              {helpText}
-            </pre>
+            <pre className={styles.helpPre}>{helpText}</pre>
           </div>
         </div>
       </div>
@@ -143,9 +114,8 @@ export default function ShiftPage() {
           <span className={shared.cardTitle}>Custom Arguments</span>
         </div>
         <div className={shared.cardBody}>
-          <div style={{ display: "flex", gap: "0.625rem", alignItems: "flex-start" }}>
+          <div className={styles.argsRow}>
             <textarea
-              ref={textareaRef}
               value={args}
               onChange={(e) => setArgs(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -154,34 +124,10 @@ export default function ShiftPage() {
               spellCheck={false}
               autoCorrect="off"
               autoCapitalize="off"
-              style={{
-                flex: 1,
-                background: "var(--bg)",
-                border: "1px solid var(--border)",
-                borderRadius: "calc(var(--radius) - 2px)",
-                color: "var(--text)",
-                fontFamily: "var(--mono)",
-                fontSize: "0.825rem",
-                lineHeight: 1.5,
-                padding: "0.5rem 0.75rem",
-                resize: "vertical",
-                minHeight: "2.4rem",
-                outline: "none",
-                transition: "border-color 0.15s, box-shadow 0.15s",
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "var(--accent)";
-                e.currentTarget.style.boxShadow =
-                  "0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent)";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "var(--border)";
-                e.currentTarget.style.boxShadow = "none";
-              }}
+              className={styles.textarea}
             />
             <button
-              className={shared.btn}
-              style={{ flexShrink: 0 }}
+              className={`${shared.btn} ${styles.launchBtn}`}
               disabled={!invoke || launching}
               onClick={doLaunch}
             >
@@ -201,13 +147,7 @@ export default function ShiftPage() {
 
           {/* Status line */}
           {status.msg && (
-            <div
-              style={{
-                marginTop: "0.5rem",
-                fontSize: "0.775rem",
-                color: status.cls === "err" ? "var(--red)" : "var(--subtext)",
-              }}
-            >
+            <div data-cls={status.cls} className={styles.statusLine}>
               {status.msg}
             </div>
           )}
@@ -215,14 +155,7 @@ export default function ShiftPage() {
       </div>
 
       {/* ── Footer hint ──────────────────────────────────────────────────── */}
-      <p
-        style={{
-          fontSize: "0.75rem",
-          color: "var(--subtext)",
-          textAlign: "center",
-          marginTop: "auto",
-        }}
-      >
+      <p className={styles.footer}>
         Arguments are saved automatically. Press <kbd>Ctrl+Enter</kbd> to
         launch.
       </p>
