@@ -32,7 +32,6 @@ use clap::{CommandFactory, Parser};
 use config::{DEFAULT_GAME_ID, DEFAULT_URL};
 use include_dir::{include_dir, Dir};
 use lazy_static::lazy_static;
-#[cfg(not(target_os = "android"))]
 use urlencoding::encode as url_encode;
 
 #[cfg(not(target_os = "android"))]
