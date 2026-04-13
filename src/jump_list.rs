@@ -1,11 +1,52 @@
-//! Windows taskbar jump-list support.
-//!
-//! Exposes `add_tasks` which appends entries to the application's "Tasks"
-//! section in the Windows taskbar jump list.  Each entry re-launches the
-//! current executable with a fixed set of arguments.
-//!
-//! This module compiles only on Windows; on all other targets the public
-//! surface is a no-op stub so call sites need no `#[cfg(windows)]` guards.
+use std::fs;
+use std::path::PathBuf;
+use serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
+struct TaskEntry {
+    title: String,
+    args: String,
+}
+
+fn tasks_file_path() -> Option<PathBuf> {
+    let base = std::env::var_os("LOCALAPPDATA")?;
+    let mut path = PathBuf::from(base);
+    path.push("DanTheMan827");
+    path.push("mbf-bridge");
+    fs::create_dir_all(&path).ok()?;
+    path.push("jump_tasks.json");
+    Some(path)
+}
+
+fn load_tasks() -> Vec<TaskEntry> {
+    if let Some(path) = tasks_file_path() {
+        if let Ok(data) = fs::read_to_string(path) {
+            if let Ok(list) = serde_json::from_str::<Vec<TaskEntry>>(&data) {
+                return list;
+            }
+        }
+    }
+    Vec::new()
+}
+
+fn save_tasks(tasks: &[TaskEntry]) {
+    if let Some(path) = tasks_file_path() {
+        let _ = fs::write(path, serde_json::to_string_pretty(tasks).unwrap_or_default());
+    }
+}
+
+/// Prepend a task (move to front if exists), persist, and update jump list
+pub fn prepend_task(title: &str, args: &str) {
+    let mut tasks = load_tasks();
+    // Remove any existing matching task
+    tasks.retain(|t| !(t.title == title && t.args == args));
+    // Insert at front
+    tasks.insert(0, TaskEntry { title: title.to_string(), args: args.to_string() });
+    save_tasks(&tasks);
+    // Call jump list update
+    let task_refs: Vec<(&str, &str)> = tasks.iter().map(|t| (t.title.as_str(), t.args.as_str())).collect();
+    imp::add_tasks(&task_refs);
+}
 
 #[cfg(windows)]
 mod imp {
@@ -133,16 +174,4 @@ mod imp {
             let _ = dest_list.CommitList();
         }
     }
-}
-
-/// Add entries to the Windows taskbar jump list.
-///
-/// `tasks` is a slice of `(display_title, argument_string)` pairs; each entry
-/// re-launches the current executable with the given arguments.
-///
-/// On non-Windows platforms this is a no-op.
-#[allow(unused_variables)]
-pub fn add_tasks(tasks: &[(&str, &str)]) {
-    #[cfg(windows)]
-    imp::add_tasks(tasks);
 }

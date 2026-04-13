@@ -430,6 +430,14 @@ fn create_help_window(app: &tauri::App) -> tauri::Result<tauri::WebviewWindow> {
 // ---------------------------------------------------------------------------
 
 fn main() {
+    #[cfg(windows)]
+    use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
+
+    unsafe {
+        #[cfg(windows)]
+        let _ = SetCurrentProcessExplicitAppUserModelID(windows::core::w!("YourApp.Id"));
+    }
+
     // Windows: allocate a console in release builds when --console is passed.
     #[cfg(all(not(debug_assertions), windows))]
     let _allocated_console = (ARGS.console || ARGS.help) && console::allocate_console();
@@ -513,7 +521,7 @@ fn main() {
             title
         };
 
-        jump_list::add_tasks(&[(&short_title, &entry_arg_str)]);
+        jump_list::prepend_task(&short_title, &entry_arg_str);
     }
 
     // Prefix the init script with the ADB-available flag so bridge.js can

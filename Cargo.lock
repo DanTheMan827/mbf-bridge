@@ -2002,6 +2002,7 @@ dependencies = [
  "openssl",
  "rfd",
  "serde",
+ "serde_json",
  "shlex",
  "tauri",
  "tauri-build",
