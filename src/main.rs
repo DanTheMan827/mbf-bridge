@@ -612,6 +612,9 @@ async fn main() {
         let _ = SetCurrentProcessExplicitAppUserModelID(windows::core::w!("com.DanTheMan827.mbf-bridge"));
     }
     
+    #[cfg(windows)]
+    jump_list::write_tasks();
+    
     // --help: open a React help window instead of printing to a console.
     // On debug builds (where the console is always present) we also print to
     // stdout for convenience.

@@ -53,6 +53,15 @@ pub fn prepend_task(title: &str, args: &str) {
     imp::add_tasks(&task_refs);
 }
 
+/// Write all tasks to the jump list
+#[cfg(windows)]
+pub fn write_tasks() {
+    let tasks = load_tasks();
+    // Call jump list update
+    let task_refs: Vec<(&str, &str)> = tasks.iter().map(|t| (t.title.as_str(), t.args.as_str())).collect();
+    imp::add_tasks(&task_refs);
+}
+
 #[cfg(windows)]
 mod imp {
     use std::os::windows::ffi::OsStrExt;
