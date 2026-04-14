@@ -513,11 +513,6 @@ fn handle_adb_unavailable(app: &tauri::App, browser_url: &str) {
             == MessageDialogResult::Yes;
 
         if wants_install {
-            // Store the URL so open_main_window can create the main window later.
-            app.manage(PendingMainWindow {
-                url: browser_url.to_string(),
-            });
-
             match crate::tauri_windows::create_winget_progress_window(app.app_handle()) {
                 Ok(_) => {
                     // Spawn winget; the progress window will call open_main_window on success.
@@ -589,6 +584,18 @@ async fn open_main_window(app: tauri::AppHandle) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn check_adb_on_startup() -> bool {
+    std::thread::spawn(|| {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map(|rt| rt.block_on(crate::adb::adb_connect_or_start()).is_ok())
+            .unwrap_or(false)
+    })
+    .join()
+    .unwrap_or(false)
 }
 
 // ---------------------------------------------------------------------------
@@ -713,6 +720,14 @@ async fn main() {
             // Create the appropriate window (Android manages its own activity).
             #[cfg(not(target_os = "android"))]
             {
+                let adb_ok = check_adb_on_startup();
+                
+                if !adb_ok {
+                    handle_adb_unavailable(app, &browser_url);
+                    
+                    return Ok(());
+                }
+                
                 if ARGS.test {
                     tauri_windows::create_test_window(app);
                 } else if ARGS.help {
@@ -720,34 +735,11 @@ async fn main() {
                 } else if open_shift_window {
                     tauri_windows::create_shift_window(app, modifier_key_label);
                 } else {
-                    // ── ADB gate ─────────────────────────────────────────────
-                    // Verify ADB is reachable *before* the main window opens.
-                    // We run the async check on a dedicated thread with its own
-                    // single-threaded Tokio runtime so we can block here without
-                    // interfering with Tauri's runtime or causing a deadlock.
-                    let adb_ok = std::thread::spawn(|| {
-                        tokio::runtime::Builder::new_current_thread()
-                            .enable_all()
-                            .build()
-                            .map(|rt| rt.block_on(crate::adb::adb_connect_or_start()).is_ok())
-                            .unwrap_or(false)
-                    })
-                    .join()
-                    .unwrap_or(false);
+                    let url = url::Url::parse(&browser_url)
+                        .map(tauri::WebviewUrl::External)
+                        .map_err(|e| e.to_string())?;
 
-                    if adb_ok {
-                        let url = url::Url::parse(&browser_url)
-                            .map(tauri::WebviewUrl::External)
-                            .map_err(|e| e.to_string())?;
-
-                        create_app_window(app, url, &crate::adb_bridge::INIT_SCRIPT)?;
-                    } else {
-                        // ADB unavailable: show winget prompt (Windows) or
-                        // manual-install dialog (all platforms), then either
-                        // open the progress window (returning here without a
-                        // main window) or exit(1).
-                        handle_adb_unavailable(app, &browser_url);
-                    }
+                    create_app_window(app, url, &crate::adb_bridge::INIT_SCRIPT)?;
                 }
             }
 
