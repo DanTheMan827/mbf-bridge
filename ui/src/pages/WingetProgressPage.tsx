@@ -28,6 +28,7 @@ function sgrToCss(params: number[]): string {
 class AnsiScreen {
   private lines: Array<Array<{ t: string; s: string }>> = [[]];
   private row = 0;
+  private col = 0;
   private css = "";
 
   write(data: Uint8Array): void {
@@ -37,11 +38,13 @@ class AnsiScreen {
       const ch = text[i];
 
       if (ch === "\r") {
-        this.lines[this.row] = [];
+        this.lines[this.row] ??= [];
+        this.col = 0;
         i++;
       } else if (ch === "\n") {
         this.row++;
         while (this.row >= this.lines.length) this.lines.push([]);
+        this.col = 0;
         i++;
       } else if (ch === "\x1b" && text[i + 1] === "[") {
         // CSI sequence: scan to the final byte (0x40–0x7E, i.e. '@' through '~')
@@ -65,13 +68,55 @@ class AnsiScreen {
       } else if (ch === "\x1b") {
         i += 2;
       } else {
+        // Write character at current row/col, overwriting if needed
+        this.lines[this.row] ??= [];
         const line = this.lines[this.row];
-        const last = line[line.length - 1];
-        if (last && last.s === this.css) last.t += ch;
-        else line.push({ t: ch, s: this.css });
+        // Find the segment at this.col
+        let col = this.col;
+        let segIdx = 0;
+        let charCount = 0;
+        // Find the segment and offset within segment for this.col
+        while (segIdx < line.length && charCount + line[segIdx].t.length <= col) {
+          charCount += line[segIdx].t.length;
+          segIdx++;
+        }
+        if (col < this.lineLength(line)) {
+          // Overwrite existing character
+          if (segIdx < line.length) {
+            const seg = line[segIdx];
+            const offset = col - charCount;
+            if (seg.s === this.css) {
+              // Overwrite in-place
+              seg.t = seg.t.substring(0, offset) + ch + seg.t.substring(offset + 1);
+            } else {
+              // Split segment if needed
+              const before = seg.t.substring(0, offset);
+              const after = seg.t.substring(offset + 1);
+              const newSegs = [];
+              if (before) newSegs.push({ t: before, s: seg.s });
+              newSegs.push({ t: ch, s: this.css });
+              if (after) newSegs.push({ t: after, s: seg.s });
+              // Replace seg with newSegs
+              line.splice(segIdx, 1, ...newSegs);
+            }
+          }
+        } else {
+          // Append at end
+          if (line.length && line[line.length - 1].s === this.css) {
+            line[line.length - 1].t += ch;
+          } else {
+            line.push({ t: ch, s: this.css });
+          }
+        }
+        this.col++;
         i++;
       }
     }
+  }
+
+  /** Returns the total number of characters in a line (across all segments). */
+  private lineLength(line: Array<{ t: string; s: string }>): number {
+    return line.reduce((sum, seg) => sum + seg.t.length, 0);
   }
 
   toHTML(): string {
@@ -116,6 +161,9 @@ export default function WingetProgressPage() {
     };
 
     const unlistenOutput = listen<WingetOutputPayload>("winget-output", (ev) => {
+      if (__DEV__) {
+        console.debug("[winget-output]", new TextDecoder().decode(new Uint8Array(ev.payload.data)), ev.payload.data);
+      }
       screen.current.write(new Uint8Array(ev.payload.data));
       flush();
     });
@@ -123,7 +171,7 @@ export default function WingetProgressPage() {
     const unlistenDone = listen<WingetDonePayload>("winget-done", (ev) => {
       const ok  = ev.payload.success;
       const msg = ok
-        ? "\r\n\x1b[32mInstallation complete. Connecting to ADB\u2026\x1b[0m"
+        ? "\r\n\x1b[32mInstallation complete.\u2026\x1b[0m"
         : "\r\n\x1b[31mInstallation failed or ADB could not be started.\x1b[0m";
       screen.current.write(new TextEncoder().encode(msg));
       flush();
@@ -177,7 +225,7 @@ export default function WingetProgressPage() {
             </p>
           )}
           <button className={styles.closeBtn} onClick={handleClose}>
-            {success ? "Continue" : "Close"}
+            Close
           </button>
         </div>
       )}
