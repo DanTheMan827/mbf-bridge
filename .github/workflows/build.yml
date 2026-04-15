@@ -290,7 +290,7 @@ jobs:
             mbf-bridge-linux-x64 \
             mbf-bridge-windows-x86 \
             mbf-bridge-windows-x64 \
-            mbf-bridge-macos-universal \
+            mbf-bridge-macos-universal
           do
             package_zip "$f-release" "${f}-release.zip"
             package_zip "$f-release-embedded-adb" "${f}-release-embedded-adb.zip"
