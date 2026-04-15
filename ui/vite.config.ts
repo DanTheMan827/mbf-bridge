@@ -21,6 +21,9 @@ export default defineConfig(({ mode }): UserConfig => {
   const isDebug = mode === "debug";
 
   return {
+    define: {
+      "__DEV__": JSON.stringify(isDebug),
+    },
     plugins: [preact()],
     // Set base to "/" so all asset paths are absolute — required because the
     // embedded `mbf://` protocol serves files from the include_dir root.

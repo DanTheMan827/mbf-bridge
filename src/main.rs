@@ -60,6 +60,7 @@ struct Args {
     console: bool,
 
     /// Open the built-in test page instead of the MBF app
+    #[cfg(debug_assertions)]
     #[arg(long, default_value_t = false, help_heading = "Development Options")]
     test: bool,
 
@@ -646,6 +647,12 @@ async fn main() {
     let dev_changed     = ARGS.dev_mode;
     let ignore_package_id_changed = ARGS.ignore_package_id;
     let game_id_changed = ARGS.game_id != DEFAULT_GAME_ID;
+    
+    #[cfg(debug_assertions)]
+    let test_mode = ARGS.test;
+    
+    #[cfg(not(debug_assertions))]
+    let test_mode = false;
 
     #[cfg(windows)]
     if url_changed || dev_changed || ignore_package_id_changed || game_id_changed {
@@ -718,7 +725,7 @@ async fn main() {
 
     // Detect the launch-options modifier key (desktop only).
     #[cfg(not(target_os = "android"))]
-    let open_shift_window = !ARGS.test && !ARGS.help && is_launch_modifier_held();
+    let open_shift_window = !test_mode && !ARGS.help && is_launch_modifier_held();
 
     let browser_url = build_browser_url();
 
@@ -745,7 +752,7 @@ async fn main() {
                     return Ok(());
                 }
                 
-                if ARGS.test {
+                if test_mode {
                     tauri_windows::create_test_window(app);
                 } else if ARGS.help {
                     tauri_windows::create_help_window(app);
