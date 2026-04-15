@@ -41,9 +41,10 @@ fn main() {
     assert!(status.success(), "`npm run build` exited with {status}");
 
     // Compress every file in ui/dist/ into ui/dist-gz/ with gzip level 9.
-    // The compressed files are embedded in the binary via `include_dir!` and
-    // served with `Content-Encoding: gzip` so the WebView decompresses them
-    // transparently — no runtime decompression library is needed.
+    // The compressed files are embedded in the binary via `include_dir!` to
+    // reduce binary size.  serve_embedded() decompresses them on the Rust side
+    // before returning responses (Tauri custom protocol handlers do not honour
+    // Content-Encoding: gzip transparently).
     let dist_dir = ui_dir.join("dist");
     let dist_gz_dir = ui_dir.join("dist-gz");
     assert!(

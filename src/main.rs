@@ -30,7 +30,9 @@ mod tauri_windows;
 use adb_bridge::AdbBridge;
 use clap::{CommandFactory, Parser};
 use config::{DEFAULT_GAME_ID, DEFAULT_URL};
+use flate2::read::GzDecoder;
 use include_dir::{include_dir, Dir};
+use std::io::Read;
 use lazy_static::lazy_static;
 use tauri::Manager;
 use urlencoding::encode as url_encode;
@@ -290,28 +292,37 @@ fn serve_embedded(req: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<
     let url = req.uri().path().trim_start_matches('/');
 
     // Look up the file in the embedded (gzip-compressed) dist directory.
-    // All files are served with Content-Encoding: gzip so the WebView
-    // decompresses them transparently.  Fall back to `index.html` for any
-    // unrecognised path to support SPA client-side routing.
-    let (body, mime) = match UI_DIR.get_file(url) {
+    // Files are stored compressed to reduce binary size; we decompress on the
+    // Rust side before sending to the WebView (custom protocol handlers do not
+    // honour Content-Encoding: gzip).
+    // Fall back to `index.html` for any unrecognised path so that SPA routing works.
+    let (compressed, mime) = match UI_DIR.get_file(url) {
         Some(f) => {
             let mime = mime_guess::from_path(url)
                 .first_raw()
                 .unwrap_or("application/octet-stream");
-            (f.contents().to_vec(), mime)
+            (f.contents(), mime)
         }
         None => {
             let html = UI_DIR
                 .get_file("index.html")
-                .map(|f| f.contents().to_vec())
+                .map(|f| f.contents())
                 .unwrap_or_default();
             (html, "text/html; charset=utf-8")
         }
     };
 
+    let mut body = Vec::new();
+    GzDecoder::new(compressed)
+        .read_to_end(&mut body)
+        .unwrap_or_else(|_| {
+            // If decompression fails for any reason, serve the raw bytes.
+            body = compressed.to_vec();
+            0
+        });
+
     tauri::http::Response::builder()
         .header("Content-Type", mime)
-        .header("Content-Encoding", "gzip")
         .status(200)
         .body(body)
         .unwrap()
