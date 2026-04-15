@@ -277,11 +277,13 @@ jobs:
             local dest_zip="$2"
             
             if [ -d "$src_dir" ]; then
-              (cd "$src_dir" && zip "../release/${dest_zip}" *)
+              (cd "$src_dir" && zip -r "../release/${dest_zip}" .)
             else
               echo "Directory $src_dir does not exist, skipping packaging ${dest_zip}"
             fi
           }
+
+          find .
           
           for f in \
             mbf-bridge-linux-x64 \
