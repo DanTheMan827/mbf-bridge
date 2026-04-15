@@ -269,8 +269,8 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p release
-          (cd mbf-bridge-macos-universal-release && zip -j ../release/mbf-bridge-macos-universal-release.zip ModsBeforeFriday.app)
           find -type f -name "mbf_bridge" -exec chmod +x {} \;
+          (cd mbf-bridge-macos-universal-release && zip -r ../release/mbf-bridge-macos-universal-release.zip .)
           
           package_zip() {
             local src_dir="$1"
