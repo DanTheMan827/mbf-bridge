@@ -46,6 +46,10 @@ fn main() {
     // transparently — no runtime decompression library is needed.
     let dist_dir = ui_dir.join("dist");
     let dist_gz_dir = ui_dir.join("dist-gz");
+    assert!(
+        dist_dir.exists(),
+        "ui/dist/ does not exist after npm build — check that `npm run {build_script}` succeeded"
+    );
     compress_dir(&dist_dir, &dist_gz_dir);
 
     // Re-run this build script when frontend source files change.
@@ -71,7 +75,8 @@ fn compress_dir(src: &std::path::Path, dst: &std::path::Path) {
     std::fs::create_dir_all(dst).expect("failed to create dist-gz/");
 
     for entry in std::fs::read_dir(src).expect("failed to read dist/") {
-        let entry = entry.unwrap();
+        let entry = entry
+            .unwrap_or_else(|e| panic!("failed to read directory entry in {}: {e}", src.display()));
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
 

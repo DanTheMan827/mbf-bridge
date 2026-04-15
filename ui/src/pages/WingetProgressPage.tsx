@@ -44,8 +44,11 @@ class AnsiScreen {
         while (this.row >= this.lines.length) this.lines.push([]);
         i++;
       } else if (ch === "\x1b" && text[i + 1] === "[") {
+        // CSI sequence: scan to the final byte (0x40–0x7E, i.e. '@' through '~')
+        const CSI_FINAL_MIN = 0x40; // '@'
+        const CSI_FINAL_MAX = 0x7e; // '~'
         let j = i + 2;
-        while (j < text.length && (text.charCodeAt(j) < 0x40 || text.charCodeAt(j) > 0x7e)) j++;
+        while (j < text.length && (text.charCodeAt(j) < CSI_FINAL_MIN || text.charCodeAt(j) > CSI_FINAL_MAX)) j++;
         const cmd = text[j] ?? "";
         const params = text.slice(i + 2, j).split(";").map((s) => parseInt(s || "0", 10));
         switch (cmd) {
@@ -104,6 +107,9 @@ export default function WingetProgressPage() {
 
     const flush = () => {
       if (preRef.current) {
+        // Safe: toHTML() escapes &, < and > before inserting into spans.
+        // Source data comes exclusively from the local winget process via
+        // the Tauri Rust backend — no external actor can inject arbitrary HTML.
         preRef.current.innerHTML = screen.current.toHTML();
         preRef.current.scrollTop = preRef.current.scrollHeight;
       }
