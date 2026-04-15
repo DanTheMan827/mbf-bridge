@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState } from "preact/hooks";
 
 export type LogClass = "tx" | "rx" | "info" | "warn" | "err";
 

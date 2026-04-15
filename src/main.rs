@@ -40,7 +40,7 @@ use rfd::FileDialog;
 
 /// The entire compiled Vite `dist/` folder embedded at compile time.
 /// Served via the `mbf://` custom protocol so the app can run offline.
-static UI_DIR: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/ui/dist");
+static UI_DIR: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/ui/dist-gz");
 
 // ---------------------------------------------------------------------------
 // CLI arguments
@@ -289,8 +289,10 @@ fn serve_embedded(req: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<
     // e.g. "mbf://localhost/assets/index.js" → "assets/index.js"
     let url = req.uri().path().trim_start_matches('/');
 
-    // Look up the file in the embedded dist directory.  Fall back to
-    // `index.html` for any unrecognised path so React Router can handle it.
+    // Look up the file in the embedded (gzip-compressed) dist directory.
+    // All files are served with Content-Encoding: gzip so the WebView
+    // decompresses them transparently.  Fall back to `index.html` for any
+    // unrecognised path to support SPA client-side routing.
     let (body, mime) = match UI_DIR.get_file(url) {
         Some(f) => {
             let mime = mime_guess::from_path(url)
@@ -309,6 +311,7 @@ fn serve_embedded(req: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<
 
     tauri::http::Response::builder()
         .header("Content-Type", mime)
+        .header("Content-Encoding", "gzip")
         .status(200)
         .body(body)
         .unwrap()

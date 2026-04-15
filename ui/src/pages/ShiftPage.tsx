@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "preact/hooks";
 import shared from "../styles/shared.module.css";
 import styles from "./ShiftPage.module.css";
 import HelpCard from "../components/HelpCard";
@@ -50,7 +50,7 @@ export default function ShiftPage() {
 
   // Ctrl+Enter / Cmd+Enter keyboard shortcut.
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    (e: KeyboardEvent) => {
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         doLaunch();
@@ -95,11 +95,11 @@ export default function ShiftPage() {
           <div className={styles.argsRow}>
             <textarea
               value={args}
-              onChange={(e) => setArgs(e.target.value)}
+              onChange={(e) => setArgs((e.target as HTMLTextAreaElement).value)}
               onKeyDown={handleKeyDown}
               rows={2}
               placeholder="e.g. --url https://example.com --dev --adb-port 5038"
-              spellCheck={false}
+              spellcheck={false}
               autoCorrect="off"
               autoCapitalize="off"
               className={styles.textarea}

@@ -1995,6 +1995,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "core-foundation",
+ "flate2",
  "include_dir",
  "lazy_static",
  "mime_guess",

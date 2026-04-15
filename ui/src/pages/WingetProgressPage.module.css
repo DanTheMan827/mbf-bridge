@@ -72,15 +72,16 @@
 .termContainer {
   width: 100%;
   height: 100%;
-}
-
-/* xterm.js overrides – fit into our container */
-.termContainer :global(.xterm) {
-  height: 100%;
-}
-.termContainer :global(.xterm-viewport),
-.termContainer :global(.xterm-screen) {
-  width: 100% !important;
+  overflow-y: auto;
+  padding: 0.6rem 0.75rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #d4d8f0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: transparent;
+  box-sizing: border-box;
 }
 
 /* ── Footer ──────────────────────────────────────────────────── */

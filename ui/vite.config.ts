@@ -1,5 +1,5 @@
 import { defineConfig, type UserConfig } from "vite";
-import react from "@vitejs/plugin-react";
+import preact from "@preact/preset-vite";
 
 // https://vite.dev/config/
 //
@@ -21,7 +21,7 @@ export default defineConfig(({ mode }): UserConfig => {
   const isDebug = mode === "debug";
 
   return {
-    plugins: [react()],
+    plugins: [preact()],
     // Set base to "/" so all asset paths are absolute — required because the
     // embedded `mbf://` protocol serves files from the include_dir root.
     base: "/",

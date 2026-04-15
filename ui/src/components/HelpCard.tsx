@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "preact/hooks";
 import shared from "../styles/shared.module.css";
 import styles from "./HelpCard.module.css";
 

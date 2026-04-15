@@ -40,6 +40,14 @@ fn main() {
         .expect("Failed to run `npm run build` in ui/");
     assert!(status.success(), "`npm run build` exited with {status}");
 
+    // Compress every file in ui/dist/ into ui/dist-gz/ with gzip level 9.
+    // The compressed files are embedded in the binary via `include_dir!` and
+    // served with `Content-Encoding: gzip` so the WebView decompresses them
+    // transparently — no runtime decompression library is needed.
+    let dist_dir = ui_dir.join("dist");
+    let dist_gz_dir = ui_dir.join("dist-gz");
+    compress_dir(&dist_dir, &dist_gz_dir);
+
     // Re-run this build script when frontend source files change.
     println!("cargo:rerun-if-changed=ui/src");
     println!("cargo:rerun-if-changed=ui/index.html");
@@ -48,4 +56,38 @@ fn main() {
     println!("cargo:rerun-if-changed=ui/tsconfig.app.json");
 
     tauri_build::build();
+}
+
+/// Recursively gzip-compress every file under `src` into a mirrored tree at
+/// `dst`.  The destination directory is wiped clean before each run so stale
+/// files from a previous build never linger.
+fn compress_dir(src: &std::path::Path, dst: &std::path::Path) {
+    use flate2::{write::GzEncoder, Compression};
+    use std::io::Write as _;
+
+    if dst.exists() {
+        std::fs::remove_dir_all(dst).expect("failed to clear dist-gz/");
+    }
+    std::fs::create_dir_all(dst).expect("failed to create dist-gz/");
+
+    for entry in std::fs::read_dir(src).expect("failed to read dist/") {
+        let entry = entry.unwrap();
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+
+        if src_path.is_dir() {
+            compress_dir(&src_path, &dst_path);
+        } else {
+            let data = std::fs::read(&src_path)
+                .unwrap_or_else(|e| panic!("failed to read {}: {e}", src_path.display()));
+            let mut enc = GzEncoder::new(Vec::new(), Compression::best());
+            enc.write_all(&data)
+                .unwrap_or_else(|e| panic!("gzip write failed for {}: {e}", src_path.display()));
+            let compressed = enc
+                .finish()
+                .unwrap_or_else(|e| panic!("gzip finish failed for {}: {e}", src_path.display()));
+            std::fs::write(&dst_path, compressed)
+                .unwrap_or_else(|e| panic!("failed to write {}: {e}", dst_path.display()));
+        }
+    }
 }

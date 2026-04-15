@@ -52,6 +52,7 @@ x11 = { version = "2.21.0", features = ["xlib"] }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+flate2 = "1"
 
 [target."cfg(target_os = \"macos\")".dependencies]
 core-foundation = "0.10.0"

@@ -2,7 +2,7 @@ import {
   useCallback,
   useEffect,
   useState,
-} from "react";
+} from "preact/hooks";
 import type { AdbServerClient } from "@yume-chan/adb";
 import type { AdbConnection } from "../types/global";
 import { useLog, type LogClass } from "../hooks/useLog";
