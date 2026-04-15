@@ -276,6 +276,7 @@ jobs:
             local src_dir="$1"
             local dest_zip="$2"
             
+            echo "Packaging: $src_dir -> release/${dest_zip}"
             if [ -d "$src_dir" ]; then
               (cd "$src_dir" && zip -r "../release/${dest_zip}" .)
             else
@@ -287,8 +288,8 @@ jobs:
           
           for f in \
             mbf-bridge-linux-x64 \
-            i686-pc-windows-msvc \
-            x86_64-pc-windows-msvc \
+            mbf-bridge-windows-x86 \
+            mbf-bridge-windows-x64 \
             mbf-bridge-macos-universal \
           do
             package_zip "$f-release" "${f}-release.zip"
