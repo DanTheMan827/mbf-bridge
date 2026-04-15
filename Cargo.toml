@@ -6,7 +6,7 @@ edition = "2021"
 build = "build.rs"
 
 [features]
-default = ["embed-adb"]
+default = []
 embed-adb = []
 
 [profile.release]

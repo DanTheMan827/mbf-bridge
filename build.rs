@@ -2,6 +2,18 @@ fn main() {
     // Build the React/Vite frontend before the Tauri build step so that
     // `include_bytes!("../ui/dist/index.html")` resolves correctly.
     let ui_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ui");
+    let dist_dir = ui_dir.join("dist");
+    let dist_gz_dir = ui_dir.join("dist-gz");
+    
+    // Delete the old dist-gz/ directory to prevent stale files from previous builds from lingering around and being accidentally included in the binary.
+    if dist_gz_dir.exists() {
+        std::fs::remove_dir_all(&dist_gz_dir).expect("failed to clear dist-gz/");
+    }
+    
+    // Delete the old dist/ directory to prevent stale files from previous builds from lingering around and being accidentally included in the binary.
+    if dist_dir.exists() {
+        std::fs::remove_dir_all(&dist_dir).expect("failed to clear dist/");
+    }
 
     // On Windows the npm wrapper is `npm.cmd`; on Unix it is plain `npm`.
     let npm = if cfg!(target_os = "windows") {
@@ -45,8 +57,6 @@ fn main() {
     // reduce binary size.  serve_embedded() decompresses them on the Rust side
     // before returning responses (Tauri custom protocol handlers do not honour
     // Content-Encoding: gzip transparently).
-    let dist_dir = ui_dir.join("dist");
-    let dist_gz_dir = ui_dir.join("dist-gz");
     assert!(
         dist_dir.exists(),
         "ui/dist/ does not exist after npm build — check that `npm run {build_script}` succeeded"

@@ -3,6 +3,8 @@ name: "Build"
 on:
   workflow_dispatch:
   push:
+    tags:
+      - 'v*'
     branches:
       - '*'
   pull_request:
@@ -14,8 +16,27 @@ env:
   NDK: r27c
 
 jobs:
+  app_version:
+    name: "Get app version from tag"
+    runs-on: ubuntu-latest
+    outputs:
+      app_version: ${{ steps.set_version.outputs.app_version }}
+    steps:
+      - name: Set app version from tag
+        id: set_version
+        shell: bash
+        run: |
+          ref_name="${GITHUB_REF_NAME:-${{ github.ref_name }}}"
+          if [[ "$ref_name" =~ ^v([0-9]+\.[0-9]+\.[0-9]+([-.+][A-Za-z0-9.-]+)?)$ ]]; then
+            version="${ref_name#v}"
+            echo "app_version=$version" >> $GITHUB_OUTPUT
+            echo "Detected version: $version"
+          else
+            echo "No valid version tag detected ($ref_name), skipping APP_VERSION."
+          fi
   build:
     name: "Build for ${{ matrix.os }} ${{ matrix.arch }}"
+    needs: app_version
     runs-on: ${{ matrix.os }}
     continue-on-error: true
     strategy:
@@ -54,6 +75,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      
+
+      - name: Patch Cargo.toml version
+        if: needs.app_version.outputs.app_version != ''
+        shell: bash
+        run: |
+          echo "Patching Cargo.toml version to ${{ needs.app_version.outputs.app_version }}"
+          sed -i.bak 's/^version = ".*"/version = "${{ needs.app_version.outputs.app_version }}"/' Cargo.toml
+          head -n 10 Cargo.toml
 
       - uses: actions/cache@v4
         with:
@@ -133,52 +166,52 @@ jobs:
           ar = "${{ env.ANDROID_NDK_ROOT }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
           linker = "${{ env.ANDROID_NDK_ROOT }}/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android31-clang"' > /home/runner/.cargo/config.toml
 
-      - name: Build (Release, without embedded ADB)
+      - name: Build Release - without embedded ADB
         if: matrix.os != 'macos-latest'
-        shell: bash
-        run: |
-          cargo build --release --target ${{ matrix.arch }} --no-default-features
-
-      - name: Upload artifact (Release, without embedded ADB)
-        if: matrix.os != 'macos-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact_name }}-release-no-embedded-adb
-          path: target/${{ matrix.arch }}/release/mbf_bridge${{ matrix.binary_extension }}
-
-      - name: Build (Release, with embedded ADB)
         shell: bash
         run: |
           cargo build --release --target ${{ matrix.arch }}
 
-      - name: Upload artifact (Release, Embedded ADB)
+      - name: Upload release artifact - without embedded adb
+        if: matrix.os != 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}-release
           path: target/${{ matrix.arch }}/release/mbf_bridge${{ matrix.binary_extension }}
 
-      - name: Build (Debug, without embedded ADB)
-        if: matrix.os != 'macos-latest'
+      - name: Build Release - with embedded ADB
         shell: bash
         run: |
-          cargo build --target ${{ matrix.arch }} --no-default-features
+          cargo build --release --target ${{ matrix.arch }} --features embed-adb
 
-      - name: Upload artifact (Debug, without embedded ADB)
-        if: matrix.os != 'macos-latest'
+      - name: Upload release artifact - with embedded adb
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}-debug-no-embedded-adb
-          path: target/${{ matrix.arch }}/debug/mbf_bridge${{ matrix.binary_extension }}
+          name: ${{ matrix.artifact_name }}-release-embedded-adb
+          path: target/${{ matrix.arch }}/release/mbf_bridge${{ matrix.binary_extension }}
 
-      - name: Build (Debug, with embedded ADB)
+      - name: Build debug - without embedded ADB
+        if: matrix.os != 'macos-latest'
         shell: bash
         run: |
           cargo build --target ${{ matrix.arch }}
 
-      - name: Upload artifact (Debug, Embedded ADB)
+      - name: Upload debug artifact - without embedded adb
+        if: matrix.os != 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}-debug
+          path: target/${{ matrix.arch }}/debug/mbf_bridge${{ matrix.binary_extension }}
+
+      - name: Build debug - with embedded ADB
+        shell: bash
+        run: |
+          cargo build --target ${{ matrix.arch }} --features embed-adb
+
+      - name: Upload debug artifact - with embedded adb
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}-debug-embedded-adb
           path: target/${{ matrix.arch }}/debug/mbf_bridge${{ matrix.binary_extension }}
 
   lipo:
@@ -201,8 +234,8 @@ jobs:
       - name: Create universal binary
         run: |
           lipo -create -output ModsBeforeFriday.app/Contents/MacOS/mbf-bridge \
-            "target/mbf-bridge-macos-intel-${{ matrix.build_type }}/mbf_bridge" \
-            "target/mbf-bridge-macos-arm-${{ matrix.build_type }}/mbf_bridge"
+            "target/mbf-bridge-macos-intel-${{ matrix.build_type }}-embedded-adb/mbf_bridge" \
+            "target/mbf-bridge-macos-arm-${{ matrix.build_type }}-embedded-adb/mbf_bridge"
           chmod +x ModsBeforeFriday.app/Contents/MacOS/mbf-bridge
 
       - name: Prepare macOS app bundle
@@ -215,3 +248,55 @@ jobs:
         with:
           name: mbf-bridge-macos-universal-${{ matrix.build_type }}
           path: build
+
+  release:
+    permissions:
+      contents: write
+
+    # Only run if the workflow was triggered by a release creation event
+    name: "Create GitHub Release"
+    runs-on: ubuntu-latest
+    needs: [build, lipo, app_version]
+    if: needs.app_version.outputs.app_version != ''
+    
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: .
+        
+      - name: Archive macOS and Linux builds
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p release
+          (cd mbf-bridge-macos-universal-release && zip -j ../release/mbf-bridge-macos-universal-release.zip ModsBeforeFriday.app)
+          find -type f -name "mbf_bridge" -exec chmod +x {} \;
+          
+          package_zip() {
+            local src_dir="$1"
+            local dest_zip="$2"
+            
+            if [ -d "$src_dir" ]; then
+              (cd "$src_dir" && zip -j "../release/${dest_zip}" *)
+            else
+              echo "Directory $src_dir does not exist, skipping packaging ${dest_zip}"
+            fi
+          }
+          
+          for f in \
+            mbf-bridge-linux-x64 \
+            i686-pc-windows-msvc \
+            x86_64-pc-windows-msvc \
+            mbf-bridge-macos-universal \
+          do
+            package_zip "$f-release" "${f}-release.zip"
+            package_zip "$f-release-embedded-adb" "${f}-release-embedded-adb.zip"
+            package_zip "$f-debug" "${f}-debug.zip"
+            package_zip "$f-debug-embedded-adb" "${f}-debug-embedded-adb.zip"
+          done
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: release/*
+          draft: true
