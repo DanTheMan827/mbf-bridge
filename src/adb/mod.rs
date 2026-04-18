@@ -158,7 +158,7 @@ pub async fn extract_adb_binaries_windows() -> Result<std::path::PathBuf, Box<dy
 /// The subfolder is named with a randomly generated UUID (using v4 as a placeholder for v7).
 #[cfg(all(target_os = "linux", feature = "embed-adb"))]
 static ADB_LINUX_BIN: LazyLock<Vec<u8>> = LazyLock::new(|| {
-    let compressed = include_bytes!("../../adb/linux/adb.gz");
+    let compressed = include_bytes!("../../adb-gz/linux/adb");
     let mut decoder = GzDecoder::new(&compressed[..]);
     let mut buf = Vec::new();
     decoder.read_to_end(&mut buf).expect("decompress adb");
