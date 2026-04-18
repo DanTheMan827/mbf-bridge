@@ -1,5 +1,6 @@
-#[cfg(all(windows, feature = "embed-adb"))]
+#[cfg(all(any(windows, target_os = "linux"), feature = "embed-adb"))]
 use std::sync::LazyLock;
+
 use std::{sync::OnceLock, time::Duration};
 
 #[cfg(any(all(windows, feature = "embed-adb"), all(target_os = "linux", feature = "embed-adb")))]
