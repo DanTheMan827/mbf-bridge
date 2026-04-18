@@ -1,4 +1,12 @@
+#[cfg(all(windows, feature = "embed-adb"))]
+use std::sync::LazyLock;
 use std::{sync::OnceLock, time::Duration};
+
+#[cfg(any(all(windows, feature = "embed-adb"), all(target_os = "linux", feature = "embed-adb")))]
+use std::io::Read;
+
+#[cfg(any(all(windows, feature = "embed-adb"), all(target_os = "linux", feature = "embed-adb")))]
+use flate2::read::GzDecoder;
 
 #[cfg(not(target_os = "android"))]
 use std::env;
@@ -102,6 +110,33 @@ pub async fn adb_connect_retry() -> tokio::io::Result<TcpStream> {
 ///
 /// The subfolder is named with a randomly generated UUID (using v4 as a placeholder for v7).
 #[cfg(all(windows, feature = "embed-adb"))]
+static ADB_WIN_EXE: LazyLock<Vec<u8>> = LazyLock::new(|| {
+    let compressed = include_bytes!("../../adb-gz/win/adb.exe");
+    let mut decoder = GzDecoder::new(&compressed[..]);
+    let mut buf = Vec::new();
+    decoder.read_to_end(&mut buf).expect("decompress adb.exe");
+    buf
+});
+
+#[cfg(all(windows, feature = "embed-adb"))]
+static ADB_WIN_API_DLL: LazyLock<Vec<u8>> = LazyLock::new(|| {
+    let compressed = include_bytes!("../../adb-gz/win/AdbWinApi.dll");
+    let mut decoder = GzDecoder::new(&compressed[..]);
+    let mut buf = Vec::new();
+    decoder.read_to_end(&mut buf).expect("decompress AdbWinApi.dll");
+    buf
+});
+
+#[cfg(all(windows, feature = "embed-adb"))]
+static ADB_WIN_USB_DLL: LazyLock<Vec<u8>> = LazyLock::new(|| {
+    let compressed = include_bytes!("../../adb-gz/win/AdbWinUsbApi.dll");
+    let mut decoder = GzDecoder::new(&compressed[..]);
+    let mut buf = Vec::new();
+    decoder.read_to_end(&mut buf).expect("decompress AdbWinUsbApi.dll");
+    buf
+});
+
+#[cfg(all(windows, feature = "embed-adb"))]
 pub async fn extract_adb_binaries_windows() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     use tokio::fs::{create_dir_all, write};
     use uuid::Uuid;
@@ -111,23 +146,24 @@ pub async fn extract_adb_binaries_windows() -> Result<std::path::PathBuf, Box<dy
     create_dir_all(&adb_subfolder).await?;
 
     let adb_path = adb_subfolder.join("adb.exe");
-    write(&adb_path, include_bytes!("../../adb/win/adb.exe")).await?;
-    write(
-        adb_subfolder.join("AdbWinApi.dll"),
-        include_bytes!("../../adb/win/AdbWinApi.dll"),
-    )
-    .await?;
-    write(
-        adb_subfolder.join("AdbWinUsbApi.dll"),
-        include_bytes!("../../adb/win/AdbWinUsbApi.dll"),
-    )
-    .await?;
+    write(&adb_path, &*ADB_WIN_EXE).await?;
+    write(adb_subfolder.join("AdbWinApi.dll"), &*ADB_WIN_API_DLL).await?;
+    write(adb_subfolder.join("AdbWinUsbApi.dll"), &*ADB_WIN_USB_DLL).await?;
     Ok(adb_path)
 }
 
 /// Extracts ADB binaries for Linux into a temporary subfolder and returns the path to the ADB executable.
 ///
 /// The subfolder is named with a randomly generated UUID (using v4 as a placeholder for v7).
+#[cfg(all(target_os = "linux", feature = "embed-adb"))]
+static ADB_LINUX_BIN: LazyLock<Vec<u8>> = LazyLock::new(|| {
+    let compressed = include_bytes!("../../adb/linux/adb.gz");
+    let mut decoder = GzDecoder::new(&compressed[..]);
+    let mut buf = Vec::new();
+    decoder.read_to_end(&mut buf).expect("decompress adb");
+    buf
+});
+
 #[cfg(all(target_os = "linux", feature = "embed-adb"))]
 pub async fn extract_adb_binaries_linux() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     use tokio::fs::{create_dir_all, write};
@@ -138,7 +174,7 @@ pub async fn extract_adb_binaries_linux() -> Result<std::path::PathBuf, Box<dyn 
     create_dir_all(&adb_subfolder).await?;
 
     let adb_path = adb_subfolder.join("adb");
-    write(&adb_path, include_bytes!("../../adb/linux/adb")).await?;
+    write(&adb_path, &*ADB_LINUX_BIN).await?;
     // Set executable permissions
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&adb_path, std::fs::Permissions::from_mode(0o755))?;

@@ -1,9 +1,12 @@
 fn main() {
     // Build the React/Vite frontend before the Tauri build step so that
     // `include_bytes!("../ui/dist/index.html")` resolves correctly.
-    let ui_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ui");
+    let base_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let ui_dir = base_dir.join("ui");
     let dist_dir = ui_dir.join("dist");
     let dist_gz_dir = ui_dir.join("dist-gz");
+    let adb_dir = base_dir.join("adb");
+    let adb_gz_dir = base_dir.join("adb-gz");
     
     // Delete the old dist-gz/ directory to prevent stale files from previous builds from lingering around and being accidentally included in the binary.
     if dist_gz_dir.exists() {
@@ -62,8 +65,11 @@ fn main() {
         "ui/dist/ does not exist after npm build — check that `npm run {build_script}` succeeded"
     );
     compress_dir(&dist_dir, &dist_gz_dir);
+    compress_dir(&adb_dir, &adb_gz_dir);
+    
 
     // Re-run this build script when frontend source files change.
+    println!("cargo:rerun-if-changed=adb");
     println!("cargo:rerun-if-changed=ui/src");
     println!("cargo:rerun-if-changed=ui/index.html");
     println!("cargo:rerun-if-changed=ui/package.json");
@@ -81,11 +87,11 @@ fn compress_dir(src: &std::path::Path, dst: &std::path::Path) {
     use std::io::Write as _;
 
     if dst.exists() {
-        std::fs::remove_dir_all(dst).expect("failed to clear dist-gz/");
+        std::fs::remove_dir_all(dst).expect(format!("failed to clear {}", dst.display()).as_str());
     }
-    std::fs::create_dir_all(dst).expect("failed to create dist-gz/");
+    std::fs::create_dir_all(dst).expect(format!("failed to create {}", dst.display()).as_str());
 
-    for entry in std::fs::read_dir(src).expect("failed to read dist/") {
+    for entry in std::fs::read_dir(src).expect(format!("failed to read {}", src.display()).as_str()) {
         let entry = entry
             .unwrap_or_else(|e| panic!("failed to read directory entry in {}: {e}", src.display()));
         let src_path = entry.path();
