@@ -4,7 +4,7 @@
   "description": "Grants access to core Tauri APIs and the ADB bridge commands for all windows.",
   "windows": ["*"],
   "remote": {
-    "urls": ["https://*", "http://*", "https://*:*", "http://*:*"]
+    "urls": ["https://*", "http://*", "https://*:*", "http://*:*", "mbf://*"]
   },
   "permissions": [
     "core:default",

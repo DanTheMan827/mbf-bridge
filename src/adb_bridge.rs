@@ -1,6 +1,15 @@
 use serde::Serialize;
-use std::sync::Arc;
-use tauri::{Emitter, WebviewWindow};
+use std::sync::{Arc, LazyLock};
+use tauri::{Emitter, Manager, WebviewWindow};
+
+pub static INIT_SCRIPT: LazyLock<String> = LazyLock::new(|| {
+    // Prefix the init script with the ADB-available flag so bridge.js can
+    // expose `isAdbAvailable` without an extra IPC round-trip.
+    format!(
+        "window.__mbfIsAdbAvailable=true;\n{}",
+        include_str!("bridge.js")
+    )
+});
 
 /// Maximum number of unacknowledged chunks in flight from Rust → JS.
 /// When this limit is reached the read loop blocks, propagating back-pressure
@@ -77,7 +86,6 @@ impl AdbBridge {
     /// Events are emitted only to the `window` that requested the connection,
     /// keeping multiple windows isolated from each other.
     pub async fn connect(&self, id: String, window: WebviewWindow) -> Result<(), String> {
-        use crate::adb::adb_connect_or_start;
         use tokio::io::AsyncReadExt;
 
         let connections = self.connections.clone();
@@ -86,72 +94,13 @@ impl AdbBridge {
         let semaphore_clone = semaphore.clone();
 
         tauri::async_runtime::spawn(async move {
-            match adb_connect_or_start().await {
-                Ok(stream) => {
-                    let (mut reader, writer) = stream.into_split();
-
-                    // Insert before emitting so the write path is ready.
-                    connections.lock().await.insert(
-                        id.clone(),
-                        ConnectionState {
-                            writer,
-                            flow_semaphore: semaphore_clone.clone(),
-                            close_tx,
-                        },
-                    );
-
-                    let _ = window.emit(
-                        "adb-connected",
-                        AdbConnectedPayload {
-                            id: id.clone(),
-                            success: true,
-                        },
-                    );
-
-                    let mut buf = vec![0u8; READ_BUFFER_SIZE];
-                    let mut close_rx = close_rx;
-
-                    loop {
-                        // ---- acquire a flow-control permit ----
-                        // Blocks when JS has not yet acknowledged FLOW_WINDOW chunks,
-                        // applying back-pressure on the ADB socket.
-                        let permit = tokio::select! {
-                            p = semaphore_clone.acquire() => match p {
-                                Ok(p) => p,
-                                // Semaphore closed by adb_close – stop reading.
-                                Err(_) => break,
-                            },
-                            // Cooperative shutdown signal.
-                            _ = close_rx.changed() => break,
-                        };
-                        // Permit is released manually via adb_ack, not on drop.
-                        permit.forget();
-
-                        // ---- read next chunk ----
-                        let n = tokio::select! {
-                            result = reader.read(&mut buf) => match result {
-                                Ok(0) | Err(_) => break,
-                                Ok(n) => n,
-                            },
-                            _ = close_rx.changed() => break,
-                        };
-
-                        let _ = window.emit(
-                            "adb-data",
-                            AdbDataPayload {
-                                id: id.clone(),
-                                data: buf[..n].to_vec(),
-                            },
-                        );
-                    }
-
-                    // Emit adb-closed only when the connection was not
-                    // already removed by an explicit adb_close call.
-                    let was_active = connections.lock().await.remove(&id).is_some();
-                    if was_active {
-                        let _ = window.emit("adb-closed", AdbClosedPayload { id });
-                    }
-                }
+            // Attempt to acquire an ADB connection.  By the time JS calls
+            // adb_connect the startup gate in main() has already confirmed ADB
+            // is reachable, so this should succeed on the first try.  If it
+            // doesn't (e.g. ADB crashed between startup and the first connect),
+            // emit a failure event and return cleanly.
+            let stream = match crate::adb::adb_connect_or_start().await {
+                Ok(s) => s,
                 Err(_) => {
                     let _ = window.emit(
                         "adb-connected",
@@ -160,7 +109,72 @@ impl AdbBridge {
                             success: false,
                         },
                     );
+                    return;
                 }
+            };
+
+            let (mut reader, writer) = stream.into_split();
+
+            // Insert before emitting so the write path is ready.
+            connections.lock().await.insert(
+                id.clone(),
+                ConnectionState {
+                    writer,
+                    flow_semaphore: semaphore_clone.clone(),
+                    close_tx,
+                },
+            );
+
+            let _ = window.emit(
+                "adb-connected",
+                AdbConnectedPayload {
+                    id: id.clone(),
+                    success: true,
+                },
+            );
+
+            let mut buf = vec![0u8; READ_BUFFER_SIZE];
+            let mut close_rx = close_rx;
+
+            loop {
+                // ---- acquire a flow-control permit ----
+                // Blocks when JS has not yet acknowledged FLOW_WINDOW chunks,
+                // applying back-pressure on the ADB socket.
+                let permit = tokio::select! {
+                    p = semaphore_clone.acquire() => match p {
+                        Ok(p) => p,
+                        // Semaphore closed by adb_close – stop reading.
+                        Err(_) => break,
+                    },
+                    // Cooperative shutdown signal.
+                    _ = close_rx.changed() => break,
+                };
+                // Permit is released manually via adb_ack, not on drop.
+                permit.forget();
+
+                // ---- read next chunk ----
+                let n = tokio::select! {
+                    result = reader.read(&mut buf) => match result {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => n,
+                    },
+                    _ = close_rx.changed() => break,
+                };
+
+                let _ = window.emit(
+                    "adb-data",
+                    AdbDataPayload {
+                        id: id.clone(),
+                        data: buf[..n].to_vec(),
+                    },
+                );
+            }
+
+            // Emit adb-closed only when the connection was not already removed
+            // by an explicit adb_close call.
+            let was_active = connections.lock().await.remove(&id).is_some();
+            if was_active {
+                let _ = window.emit("adb-closed", AdbClosedPayload { id });
             }
         });
 
@@ -203,3 +217,4 @@ impl AdbBridge {
         }
     }
 }
+

@@ -1,0 +1,92 @@
+/* ============================================================
+   MBF Bridge – Global CSS tokens and resets
+   These rules must remain in the global scope (they target
+   :root, element selectors, and pseudo-elements rather than
+   class names).  Reusable class primitives live in
+   shared.module.css and are imported as CSS Modules.
+   ============================================================ */
+
+/* ── Light mode (default) ─────────────────────────────────── */
+:root {
+  --bg:            #f4f5f7;
+  --surface:       #ffffff;
+  --surface-2:     #f0f1f4;
+  --border:        #d8dbe5;
+  --text:          #1a1d2e;
+  --subtext:       #6b7280;
+  --accent:        #2d65e8;
+  --accent-hover:  #1a4fcf;
+  --accent-text:   #ffffff;
+  --green:         #16a34a;
+  --red:           #dc2626;
+  --yellow:        #d97706;
+
+  --log-bg:        #f0f1f4;
+  --log-tx:        #1a5c8a;  /* transmitted bytes – dark blue */
+  --log-rx:        #166534;  /* received bytes – dark green  */
+  --log-warn:      #92400e;
+  --log-err:       #991b1b;
+  --log-info:      var(--text);
+
+  --mono: "SF Mono", "Fira Code", "Cascadia Code", "Consolas", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* ── Dark mode ─────────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:            #0f1117;
+    --surface:       #1a1d27;
+    --surface-2:     #11131c;
+    --border:        #2e3146;
+    --text:          #d4d8f0;
+    --subtext:       #7a80a0;
+    --accent:        #5b8af5;
+    --accent-hover:  #7ba3ff;
+    --accent-text:   #ffffff;
+    --green:         #4caf6e;
+    --red:           #e05c5c;
+    --yellow:        #e0a84d;
+
+    --log-bg:        #11131c;
+    --log-tx:        #6ec6e0;
+    --log-rx:        #a8e6b0;
+    --log-warn:      var(--yellow);
+    --log-err:       var(--red);
+    --log-info:      var(--text);
+
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+}
+
+/* ── Reset ─────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* Keyboard key indicator */
+kbd {
+  display: inline-block;
+  padding: 0.1em 0.4em;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.78em;
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+}

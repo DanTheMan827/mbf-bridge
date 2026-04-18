@@ -2,3 +2,6 @@
 /build
 /bin
 .DS_Store
+/gen/schemas/*
+*.tsbuildinfo
+/adb-gz
